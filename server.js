@@ -46,6 +46,8 @@ const translationRoutes = require('./routes/translation');
 app.use(`${config.apiPrefix}/translation`, translationRoutes);
 const bannerRoutes = require('./routes/banner');
 app.use(`${config.apiPrefix}/banner`, bannerRoutes);
+const onboardingRoutes = require('./routes/onboarding');
+app.use(`${config.apiPrefix}`, onboardingRoutes);
 
 // 404 Handler
 app.use((req, res) => {
