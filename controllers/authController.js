@@ -73,7 +73,7 @@ const verifyOTP = async (req, res) => {
 
     // Check all OTPs for this phone number (for debugging)
     const allOtps = await db.query(
-      'SELECT id, phone_number, otp_code, is_verified, expires_at, NOW() as current_time FROM otps WHERE phone_number = ?',
+      'SELECT id, phone_number, otp_code, is_verified, expires_at, NOW() as server_time FROM otps WHERE phone_number = ?',
       [phone_number]
     );
     console.log('All OTPs for this phone:', allOtps);
