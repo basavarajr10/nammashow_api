@@ -57,7 +57,9 @@ const sendOTP = async (req, res) => {
 // Verify OTP
 const verifyOTP = async (req, res) => {
   try {
+    console.log('========== VERIFY OTP START ==========');
     const { phone_number, otp } = req.body;
+    console.log('Phone:', phone_number, 'OTP:', otp);
 
     if (!phone_number || !otp) {
       return errorResponse(res, 'Phone number and OTP are required', 400);
@@ -69,15 +71,27 @@ const verifyOTP = async (req, res) => {
       return errorResponse(res, 'Phone number must be exactly 10 digits', 400);
     }
 
+    // Check all OTPs for this phone number (for debugging)
+    const allOtps = await db.query(
+      'SELECT id, phone_number, otp_code, is_verified, expires_at, NOW() as current_time FROM otps WHERE phone_number = ?',
+      [phone_number]
+    );
+    console.log('All OTPs for this phone:', allOtps);
+
     // Check OTP
     const otpRecord = await db.queryOne(
       'SELECT * FROM otps WHERE phone_number = ? AND otp_code = ? AND is_verified = 0 AND expires_at > NOW()',
       [phone_number, otp]
     );
+    console.log('OTP Record found:', otpRecord);
 
     if (!otpRecord) {
+      console.log('❌ OTP verification failed');
       return errorResponse(res, 'Invalid or expired OTP', 400);
     }
+
+    console.log('✅ OTP verified successfully');
+    console.log('========== VERIFY OTP END ==========');
 
     // Mark OTP as verified
     await db.query('UPDATE otps SET is_verified = 1 WHERE id = ?', [otpRecord.id]);

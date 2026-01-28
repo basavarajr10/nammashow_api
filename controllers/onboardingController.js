@@ -73,9 +73,6 @@ const submitTheatreOwner = async (req, res) => {
 // 2. Event Organizer Submission
 const submitEventOrganizer = async (req, res) => {
   try {
-    console.log('========== EVENT ORGANIZER SUBMISSION ==========');
-    console.log('Request body:', req.body);
-
     const {
       organization_name,
       category,
