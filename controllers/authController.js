@@ -36,8 +36,8 @@ const sendOTP = async (req, res) => {
 
     // Insert new OTP
     await db.query(
-      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, ?)',
-      [phone_number, otp, expiresAt]
+      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+      [phone_number, otp]
     );
 
     return successResponse(res, 'OTP sent successfully', {
