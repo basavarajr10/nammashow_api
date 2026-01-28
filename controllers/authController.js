@@ -34,10 +34,10 @@ const sendOTP = async (req, res) => {
     // Delete old OTPs for this phone number
     await db.query('DELETE FROM otps WHERE phone_number = ?', [phone_number]);
 
-    // Insert new OTP with MySQL NOW() for timezone consistency
+    // Insert new OTP
     await db.query(
-      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
-      [phone_number, otp]
+      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, ?)',
+      [phone_number, otp, expiresAt]
     );
 
     return successResponse(res, 'OTP sent successfully', {
@@ -92,7 +92,7 @@ const verifyOTP = async (req, res) => {
         'INSERT INTO users_profiles (phone_number, isverified, status, created_at) VALUES (?, 0, "active", NOW())',
         [phone_number]
       );
-
+      
       user = await db.queryOne(
         'SELECT * FROM users_profiles WHERE id = ?',
         [result.insertId]
@@ -196,7 +196,7 @@ const completeProfile = async (req, res) => {
     let referralCode = user.referral_code;
     if (!referralCode) {
       let isUnique = false;
-
+      
       while (!isUnique) {
         referralCode = generateReferralCode();
         const existing = await db.queryOne(
@@ -259,7 +259,7 @@ const googleSignIn = async (req, res) => {
         'INSERT INTO users_profiles (email_address, full_name, isverified, status, created_at) VALUES (?, ?, 1, "active", NOW())',
         [email, name || '']
       );
-
+      
       user = await db.queryOne(
         'SELECT * FROM users_profiles WHERE id = ?',
         [result.insertId]
@@ -363,7 +363,7 @@ const updateProfile = async (req, res) => {
     console.log('Request Body:', req.body);
     console.log('Request File:', req.file ? req.file.originalname : 'No file');
     console.log('Request User:', req.user);
-
+    
     // Check if user is authenticated
     if (!req.user || !req.user.id) {
       console.log('❌ Authentication failed - No user in request');
@@ -372,7 +372,7 @@ const updateProfile = async (req, res) => {
 
     const userId = req.user.id;
     console.log('✅ User authenticated - ID:', userId);
-
+    
     const config = require('../config/config');
     const { full_name, email, gender, city, date_of_birth } = req.body;
 
@@ -425,7 +425,7 @@ const updateProfile = async (req, res) => {
         mimetype: req.file.mimetype,
         size: req.file.size
       });
-
+      
       try {
         // Prepare form data to send to Laravel
         const FormData = require('form-data');
