@@ -30,16 +30,14 @@ const sendOTP = async (req, res) => {
 
     // Static OTP - 1234
     const otp = '1234';
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
     // Delete old OTPs for this phone number
     await db.query('DELETE FROM otps WHERE phone_number = ?', [phone_number]);
 
-    // Insert new OTP
+    // Insert new OTP with MySQL NOW() for timezone consistency
     await db.query(
-      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, ?)',
-      [phone_number, otp, expiresAt]
+      'INSERT INTO otps (phone_number, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))',
+      [phone_number, otp]
     );
 
     return successResponse(res, 'OTP sent successfully', {
@@ -57,9 +55,7 @@ const sendOTP = async (req, res) => {
 // Verify OTP
 const verifyOTP = async (req, res) => {
   try {
-    console.log('========== VERIFY OTP START ==========');
     const { phone_number, otp } = req.body;
-    console.log('Phone:', phone_number, 'OTP:', otp);
 
     if (!phone_number || !otp) {
       return errorResponse(res, 'Phone number and OTP are required', 400);
@@ -71,27 +67,15 @@ const verifyOTP = async (req, res) => {
       return errorResponse(res, 'Phone number must be exactly 10 digits', 400);
     }
 
-    // Check all OTPs for this phone number (for debugging)
-    const allOtps = await db.query(
-      'SELECT id, phone_number, otp_code, is_verified, expires_at, NOW() as server_time FROM otps WHERE phone_number = ?',
-      [phone_number]
-    );
-    console.log('All OTPs for this phone:', allOtps);
-
     // Check OTP
     const otpRecord = await db.queryOne(
       'SELECT * FROM otps WHERE phone_number = ? AND otp_code = ? AND is_verified = 0 AND expires_at > NOW()',
       [phone_number, otp]
     );
-    console.log('OTP Record found:', otpRecord);
 
     if (!otpRecord) {
-      console.log('❌ OTP verification failed');
       return errorResponse(res, 'Invalid or expired OTP', 400);
     }
-
-    console.log('✅ OTP verified successfully');
-    console.log('========== VERIFY OTP END ==========');
 
     // Mark OTP as verified
     await db.query('UPDATE otps SET is_verified = 1 WHERE id = ?', [otpRecord.id]);
@@ -108,7 +92,7 @@ const verifyOTP = async (req, res) => {
         'INSERT INTO users_profiles (phone_number, isverified, status, created_at) VALUES (?, 0, "active", NOW())',
         [phone_number]
       );
-      
+
       user = await db.queryOne(
         'SELECT * FROM users_profiles WHERE id = ?',
         [result.insertId]
@@ -212,7 +196,7 @@ const completeProfile = async (req, res) => {
     let referralCode = user.referral_code;
     if (!referralCode) {
       let isUnique = false;
-      
+
       while (!isUnique) {
         referralCode = generateReferralCode();
         const existing = await db.queryOne(
@@ -275,7 +259,7 @@ const googleSignIn = async (req, res) => {
         'INSERT INTO users_profiles (email_address, full_name, isverified, status, created_at) VALUES (?, ?, 1, "active", NOW())',
         [email, name || '']
       );
-      
+
       user = await db.queryOne(
         'SELECT * FROM users_profiles WHERE id = ?',
         [result.insertId]
@@ -379,7 +363,7 @@ const updateProfile = async (req, res) => {
     console.log('Request Body:', req.body);
     console.log('Request File:', req.file ? req.file.originalname : 'No file');
     console.log('Request User:', req.user);
-    
+
     // Check if user is authenticated
     if (!req.user || !req.user.id) {
       console.log('❌ Authentication failed - No user in request');
@@ -388,7 +372,7 @@ const updateProfile = async (req, res) => {
 
     const userId = req.user.id;
     console.log('✅ User authenticated - ID:', userId);
-    
+
     const config = require('../config/config');
     const { full_name, email, gender, city, date_of_birth } = req.body;
 
@@ -441,7 +425,7 @@ const updateProfile = async (req, res) => {
         mimetype: req.file.mimetype,
         size: req.file.size
       });
-      
+
       try {
         // Prepare form data to send to Laravel
         const FormData = require('form-data');
