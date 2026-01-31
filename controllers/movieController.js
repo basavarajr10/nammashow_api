@@ -43,9 +43,15 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
 };
 
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
-  if (!jsonString) return defaultValue;
+  if (!jsonString || typeof jsonString !== 'string') {
+    return defaultValue;
+  }
   
   const trimmed = jsonString.trim();
+  
+  if (!trimmed) {
+    return defaultValue;
+  }
   
   try {
     return JSON.parse(trimmed);
@@ -54,21 +60,19 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
         const content = trimmed.slice(1, -1).trim();
         
-        if (!content) return []; 
+        if (!content) return [];
         
         const values = content.split(',').map(item => {
-          const cleaned = item.trim();
-          return cleaned.replace(/^['"]|['"]$/g, '');
-        }).filter(item => item.length > 0);
+          return item.trim().replace(/^['"]|['"]$/g, '');
+        }).filter(item => item);
         
         return values;
       }
       
-      const fixedString = trimmed.replace(/'/g, '"');
-      return JSON.parse(fixedString);
+      return JSON.parse(trimmed.replace(/'/g, '"'));
       
     } catch (e2) {
-      console.warn(`Invalid JSON in ${fieldName}:`, trimmed);
+      console.warn(`Could not parse ${fieldName}:`, trimmed);
       return defaultValue;
     }
   }
