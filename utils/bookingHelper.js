@@ -93,25 +93,59 @@ const saveQRCodeToFile = async (data, bookingNumber) => {
     try {
         const QRCode = require('qrcode');
         const axios = require('axios');
+        const { createCanvas, loadImage } = require('canvas');
         const config = require('../config/config');
 
-        // Generate QR code as base64 PNG
-        const qrCodeDataURL = await QRCode.toDataURL(data, {
+        // Generate QR code to canvas
+        const canvas = createCanvas(400, 400);
+        await QRCode.toCanvas(canvas, data, {
             errorCorrectionLevel: 'H',
-            type: 'image/png',
-            quality: 0.95,
-            margin: 1,
+            margin: 2,
             color: {
                 dark: '#000000',
                 light: '#FFFFFF'
             },
-            width: 300
+            width: 400
         });
+
+        const ctx = canvas.getContext('2d');
+
+        // Draw white circle in center for logo background
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const logoSize = 80;
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, logoSize / 2 + 10, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Draw border around circle
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Draw "NammaShow" text
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Draw text in two lines
+        ctx.fillText('Namma', centerX, centerY - 10);
+        ctx.fillText('Show', centerX, centerY + 10);
+
+        // Add small ticket icon emoji or symbol
+        ctx.font = '20px Arial';
+        ctx.fillText('🎬', centerX, centerY - 30);
+
+        // Convert canvas to data URL
+        const qrCodeDataURL = canvas.toDataURL('image/png');
 
         // Send to Laravel API
         const laravelApiUrl = `${config.laravel.apiUrl}/v1/media/upload-qrcode`;
-        
-        console.log(`📤 Uploading QR code to Laravel: ${laravelApiUrl}`);
+
+        console.log(`📤 Uploading branded QR code to Laravel: ${laravelApiUrl}`);
 
         const response = await axios.post(laravelApiUrl, {
             booking_number: bookingNumber,
@@ -120,7 +154,7 @@ const saveQRCodeToFile = async (data, bookingNumber) => {
 
         if (response.data.success) {
             const qrCodeUrl = response.data.data.qr_code_url;
-            console.log(`✅ QR Code uploaded: ${qrCodeUrl}`);
+            console.log(`✅ Branded QR Code uploaded: ${qrCodeUrl}`);
             return qrCodeUrl;
         } else {
             throw new Error('Laravel API returned error');

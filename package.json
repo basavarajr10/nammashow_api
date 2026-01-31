@@ -17,8 +17,9 @@
   "author": "Chinamyi",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.13.3",
+    "axios": "^1.13.4",
     "body-parser": "^1.20.2",
+    "canvas": "^3.2.1",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.3.1",
