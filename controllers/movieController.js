@@ -42,7 +42,6 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
   }
 };
 
-// Helper function to safely parse JSON
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
   if (!jsonString) return defaultValue;
   try {
