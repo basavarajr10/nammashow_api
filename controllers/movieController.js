@@ -43,33 +43,50 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
 };
 
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
+  // Handle null, undefined, or non-string values
   if (!jsonString || typeof jsonString !== 'string') {
+    console.log(`${fieldName} is null/undefined or not a string:`, typeof jsonString, jsonString);
     return defaultValue;
   }
   
   const trimmed = jsonString.trim();
   
+  // Return default if empty
   if (!trimmed) {
+    console.log(`${fieldName} is empty string`);
     return defaultValue;
   }
   
+  // Log what we're trying to parse
+  console.log(`Parsing ${fieldName}:`, trimmed);
+  
   try {
-    return JSON.parse(trimmed);
+    // Try parsing as valid JSON first
+    const result = JSON.parse(trimmed);
+    console.log(`${fieldName} parsed successfully:`, result);
+    return result;
   } catch (e) {
+    console.log(`${fieldName} failed standard JSON parse, trying alternative...`);
+    // Handle [ 'value1', 'value2' ] format
     try {
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
         const content = trimmed.slice(1, -1).trim();
         
         if (!content) return [];
         
+        // Split by comma and clean each value
         const values = content.split(',').map(item => {
           return item.trim().replace(/^['"]|['"]$/g, '');
         }).filter(item => item);
         
+        console.log(`${fieldName} parsed as array:`, values);
         return values;
       }
       
-      return JSON.parse(trimmed.replace(/'/g, '"'));
+      // Try replacing single quotes with double quotes
+      const result = JSON.parse(trimmed.replace(/'/g, '"'));
+      console.log(`${fieldName} parsed after quote replacement:`, result);
+      return result;
       
     } catch (e2) {
       console.warn(`Could not parse ${fieldName}:`, trimmed);
@@ -77,7 +94,6 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
     }
   }
 };
-
 // 1. Get Now Showing Movies
 const getNowShowingMovies = async (req, res) => {
   try {
