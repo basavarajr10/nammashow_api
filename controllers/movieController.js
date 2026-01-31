@@ -42,6 +42,17 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
   }
 };
 
+// Helper function to safely parse JSON
+const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
+  if (!jsonString) return defaultValue;
+  try {
+    return JSON.parse(jsonString);
+  } catch (e) {
+    console.warn(`Invalid JSON in ${fieldName}:`, jsonString);
+    return defaultValue;
+  }
+};
+
 // 1. Get Now Showing Movies
 const getNowShowingMovies = async (req, res) => {
   try {
@@ -111,9 +122,10 @@ const getNowShowingMovies = async (req, res) => {
         // Get poster
         const posterUrl = await getMoviePosterUrl(movie.id);
 
-        // Parse JSON fields
-        const languages = movie.languages ? JSON.parse(movie.languages) : [];
-        const experienceFormats = movie.experience_formats ? JSON.parse(movie.experience_formats) : [];
+
+        // Parse JSON fields safely
+        const languages = safeJSONParse(movie.languages, 'languages', []);
+        const experienceFormats = safeJSONParse(movie.experience_formats, 'experience_formats', []);
 
         // Get today's show times preview (2-3 shows)
         const todayShows = await db.query(
@@ -250,9 +262,9 @@ const getComingSoonMovies = async (req, res) => {
         // Get poster
         const posterUrl = await getMoviePosterUrl(movie.id);
 
-        // Parse JSON fields
-        const languages = movie.languages ? JSON.parse(movie.languages) : [];
-        const experienceFormats = movie.experience_formats ? JSON.parse(movie.experience_formats) : [];
+        // Parse JSON fields safely
+        const languages = safeJSONParse(movie.languages, 'languages', []);
+        const experienceFormats = safeJSONParse(movie.experience_formats, 'experience_formats', []);
 
         return {
           id: movie.id,
@@ -314,11 +326,11 @@ const getMovieDetails = async (req, res) => {
     // Get poster
     const posterUrl = await getMoviePosterUrl(movie.id);
 
-    // Parse JSON fields
-    const languages = movie.languages ? JSON.parse(movie.languages) : [];
-    const experienceFormats = movie.experience_formats ? JSON.parse(movie.experience_formats) : [];
-    const castData = translation?.cast_data ? JSON.parse(translation.cast_data) : (movie.cast_data ? JSON.parse(movie.cast_data) : []);
-    const crewData = translation?.crew_data ? JSON.parse(translation.crew_data) : (movie.crew_data ? JSON.parse(movie.crew_data) : []);
+    // Parse JSON fields safely
+    const languages = safeJSONParse(movie.languages, 'languages', []);
+    const experienceFormats = safeJSONParse(movie.experience_formats, 'experience_formats', []);
+    const castData = translation?.cast_data ? safeJSONParse(translation.cast_data, 'cast_data', []) : safeJSONParse(movie.cast_data, 'cast_data', []);
+    const crewData = translation?.crew_data ? safeJSONParse(translation.crew_data, 'crew_data', []) : safeJSONParse(movie.crew_data, 'crew_data', []);
 
     const result = {
       id: movie.id,
@@ -393,7 +405,7 @@ const getRelatedMovies = async (req, res) => {
     const result = await Promise.all(
       relatedMovies
         .filter(movie => {
-          const movieLanguages = movie.languages ? JSON.parse(movie.languages) : [];
+          const movieLanguages = safeJSONParse(movie.languages, 'languages', []);
           return movieLanguages.some(lang => currentLanguages.includes(lang));
         })
         .slice(0, parseInt(limit))
