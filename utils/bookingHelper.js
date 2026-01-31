@@ -91,39 +91,14 @@ const formatTime = (time24) => {
 
 const saveQRCodeToFile = async (data, bookingNumber) => {
     try {
-        const fs = require('fs');
-        const path = require('path');
+        const QRCode = require('qrcode');
+        const axios = require('axios');
         const config = require('../config/config');
 
-        // Get Laravel public path from config
-        const laravelPublicPath = config.laravel.publicPath;
-
-        if (!fs.existsSync(laravelPublicPath)) {
-            console.error(`❌ CRITICAL ERROR: Laravel public path not found: ${laravelPublicPath}`);
-            console.error(`Please update LARAVEL_PUBLIC_PATH in your .env file.`);
-            throw new Error('Laravel public path not configured or does not exist.');
-        }
-
-        // Create storage/qrcodes directory if it doesn't exist
-        const qrCodesDir = path.join(laravelPublicPath, 'storage', 'qrcodes');
-        if (!fs.existsSync(qrCodesDir)) {
-            try {
-                fs.mkdirSync(qrCodesDir, { recursive: true });
-                console.log(`✅ Created directory: ${qrCodesDir}`);
-            } catch (err) {
-                console.error(`❌ Failed to create directory ${qrCodesDir}:`, err.message);
-                throw new Error('QR Code directory not writable');
-            }
-        }
-
-        // Generate filename: booking_number.png
-        const filename = `${bookingNumber}.png`;
-        const filePath = path.join(qrCodesDir, filename);
-
-        // Generate QR code and save as file
-        await QRCode.toFile(filePath, data, {
+        // Generate QR code as base64 PNG
+        const qrCodeDataURL = await QRCode.toDataURL(data, {
             errorCorrectionLevel: 'H',
-            type: 'png',
+            type: 'image/png',
             quality: 0.95,
             margin: 1,
             color: {
@@ -133,16 +108,27 @@ const saveQRCodeToFile = async (data, bookingNumber) => {
             width: 300
         });
 
-        // Return public URL (matching Laravel storage URL structure)
-        const baseUrl = config.laravel.baseUrl || 'https://nsadmin.webmoon.co.in';
-        const qrCodeUrl = `${baseUrl}/storage/qrcodes/${filename}`;
+        // Send to Laravel API
+        const laravelApiUrl = `${config.laravel.apiUrl}/v1/media/upload-qrcode`;
+        
+        console.log(`📤 Uploading QR code to Laravel: ${laravelApiUrl}`);
 
-        console.log(`✅ QR Code saved: ${qrCodeUrl}`);
-        return qrCodeUrl;
+        const response = await axios.post(laravelApiUrl, {
+            booking_number: bookingNumber,
+            qrcode_data: qrCodeDataURL
+        });
+
+        if (response.data.success) {
+            const qrCodeUrl = response.data.data.qr_code_url;
+            console.log(`✅ QR Code uploaded: ${qrCodeUrl}`);
+            return qrCodeUrl;
+        } else {
+            throw new Error('Laravel API returned error');
+        }
 
     } catch (error) {
-        console.error('Error saving QR code to file:', error);
-        throw new Error('Failed to save QR code: ' + error.message);
+        console.error('Error uploading QR code to Laravel:', error.response?.data || error.message);
+        throw new Error('Failed to upload QR code: ' + error.message);
     }
 };
 
