@@ -46,8 +46,10 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
 const getNowShowingMovies = async (req, res) => {
   try {
     console.log('========== GET NOW SHOWING MOVIES ==========');
-    const { language = 'kn', page = 1, limit = 10 } = req.query;
-    
+    const language = req.query.language || 'kn';
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
     const offset = (page - 1) * limit;
 
     // Get total count
@@ -83,7 +85,7 @@ const getNowShowingMovies = async (req, res) => {
       AND sm.deleted_at IS NULL
       ORDER BY sm.release_date DESC
       LIMIT ? OFFSET ?`,
-      [parseInt(limit), parseInt(offset)]
+      [limit, offset]
     );
 
     if (!movies || movies.length === 0) {
@@ -105,7 +107,7 @@ const getNowShowingMovies = async (req, res) => {
       movies.map(async (movie) => {
         // Get translation
         const translation = await getMovieTranslation(movie.id, language);
-        
+
         // Get poster
         const posterUrl = await getMoviePosterUrl(movie.id);
 
@@ -182,8 +184,10 @@ const getNowShowingMovies = async (req, res) => {
 const getComingSoonMovies = async (req, res) => {
   try {
     console.log('========== GET COMING SOON MOVIES ==========');
-    const { language = 'kn', page = 1, limit = 10 } = req.query;
-    
+    const language = req.query.language || 'kn';
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
     const offset = (page - 1) * limit;
 
     // Get total count
@@ -219,7 +223,7 @@ const getComingSoonMovies = async (req, res) => {
       AND sm.deleted_at IS NULL
       ORDER BY sm.release_date ASC
       LIMIT ? OFFSET ?`,
-      [parseInt(limit), parseInt(offset)]
+      [limit, offset]
     );
 
     if (!movies || movies.length === 0) {
@@ -241,7 +245,7 @@ const getComingSoonMovies = async (req, res) => {
       movies.map(async (movie) => {
         // Get translation
         const translation = await getMovieTranslation(movie.id, language);
-        
+
         // Get poster
         const posterUrl = await getMoviePosterUrl(movie.id);
 
@@ -305,7 +309,7 @@ const getMovieDetails = async (req, res) => {
 
     // Get translation
     const translation = await getMovieTranslation(movie.id, language);
-    
+
     // Get poster
     const posterUrl = await getMoviePosterUrl(movie.id);
 
@@ -395,7 +399,7 @@ const getRelatedMovies = async (req, res) => {
         .map(async (movie) => {
           // Get translation
           const translation = await getMovieTranslation(movie.id, language);
-          
+
           // Get poster
           const posterUrl = await getMoviePosterUrl(movie.id);
 
@@ -474,7 +478,7 @@ const getTheatersSchedules = async (req, res) => {
           '0': 'Bengaluru',
           '1': 'Mysore'
         };
-        
+
         const cityName = theater.city ? (cityMapping[theater.city] || theater.city) : null;
 
         // Get schedules for this theater
@@ -518,15 +522,15 @@ const getTheatersSchedules = async (req, res) => {
           schedules: filteredSchedules.map(schedule => {
             const movieLanguages = schedule.movie_languages ? JSON.parse(schedule.movie_languages) : [];
             const pricingData = schedule.pricing_data ? JSON.parse(schedule.pricing_data) : null;
-            
+
             // Determine price type based on date
             const scheduleDate = new Date(schedule.show_date);
             const dayOfWeek = scheduleDate.getDay(); // 0=Sunday, 6=Saturday
             const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
-            
+
             // TODO: Check for holidays from holiday_managements table
             const isHoliday = false;
-            
+
             // Get current prices for each category
             let priceRange = null;
             if (pricingData) {
@@ -543,14 +547,14 @@ const getTheatersSchedules = async (req, res) => {
                 }
                 currentPrices.push(price);
               });
-              
+
               if (currentPrices.length > 0) {
                 const minPrice = Math.min(...currentPrices);
                 const maxPrice = Math.max(...currentPrices);
                 priceRange = `₹${minPrice}-₹${maxPrice}`;
               }
             }
-            
+
             return {
               schedule_id: schedule.id,
               show_time: schedule.show_time,

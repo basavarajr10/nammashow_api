@@ -1162,13 +1162,16 @@ const getMyBookings = async (req, res) => {
 
         const bookingHelper = require('../utils/bookingHelper');
         const userId = req.user.id;
-        const { status, limit = 10, page = 1, language = 'kn' } = req.query;
+        const status = req.query.status ? parseInt(req.query.status) : undefined;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const language = req.query.language || 'kn';
 
         const offset = (page - 1) * limit;
         let whereClause = 'WHERE JSON_EXTRACT(user_information, "$.user_id") = ? AND deleted_at IS NULL';
         const params = [userId];
 
-        if (status) {
+        if (status !== undefined) {
             whereClause += ' AND status = ?';
             params.push(status);
         }
@@ -1197,7 +1200,7 @@ const getMyBookings = async (req, res) => {
        ${whereClause}
        ORDER BY created_at DESC
        LIMIT ? OFFSET ?`,
-            [...params, parseInt(limit), offset]
+            [...params, limit, offset]
         );
 
         // Format bookings with translations
@@ -1263,12 +1266,12 @@ const getMyBookings = async (req, res) => {
         return successResponse(res, 'Bookings fetched successfully', {
             bookings: formattedBookings,
             pagination: {
-                current_page: parseInt(page),
+                current_page: page,
                 total_pages: Math.ceil(countResult.total / limit),
                 total_items: countResult.total,
-                items_per_page: parseInt(limit),
-                has_next: parseInt(page) < Math.ceil(countResult.total / limit),
-                has_previous: parseInt(page) > 1
+                items_per_page: limit,
+                has_next: page < Math.ceil(countResult.total / limit),
+                has_previous: page > 1
             }
         });
 
