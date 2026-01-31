@@ -47,23 +47,23 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
   if (Array.isArray(jsonString)) {
     return jsonString;
   }
-  
+
   if (typeof jsonString === 'object' && jsonString !== null) {
     return jsonString;
   }
-  
+
   // Handle null, undefined, or non-string values
   if (!jsonString || typeof jsonString !== 'string') {
     return defaultValue;
   }
-  
+
   const trimmed = jsonString.trim();
-  
+
   // Return default if empty
   if (!trimmed) {
     return defaultValue;
   }
-  
+
   try {
     // Try parsing as valid JSON first
     return JSON.parse(trimmed);
@@ -72,20 +72,20 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
     try {
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
         const content = trimmed.slice(1, -1).trim();
-        
+
         if (!content) return [];
-        
+
         // Split by comma and clean each value
         const values = content.split(',').map(item => {
           return item.trim().replace(/^['"]|['"]$/g, '');
         }).filter(item => item);
-        
+
         return values;
       }
-      
+
       // Try replacing single quotes with double quotes
       return JSON.parse(trimmed.replace(/'/g, '"'));
-      
+
     } catch (e2) {
       console.warn(`Could not parse ${fieldName}:`, trimmed);
       return defaultValue;
@@ -413,7 +413,7 @@ const getRelatedMovies = async (req, res) => {
       return errorResponse(res, 'Movie not found', 404);
     }
 
-    const currentLanguages = currentMovie.languages ? JSON.parse(currentMovie.languages) : [];
+    const currentLanguages = safeJSONParse(currentMovie.languages, 'current_movie_languages', []);
 
     if (currentLanguages.length === 0) {
       return successResponse(res, 'No related movies found', []);
