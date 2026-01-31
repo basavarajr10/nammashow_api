@@ -46,10 +46,17 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
   if (!jsonString) return defaultValue;
   try {
+    // Try parsing as-is first
     return JSON.parse(jsonString);
   } catch (e) {
-    console.warn(`Invalid JSON in ${fieldName}:`, jsonString);
-    return defaultValue;
+    // If it fails, try converting single quotes to double quotes (common issue)
+    try {
+      const fixedString = jsonString.replace(/'/g, '"');
+      return JSON.parse(fixedString);
+    } catch (e2) {
+      console.warn(`Invalid JSON in ${fieldName}:`, jsonString);
+      return defaultValue;
+    }
   }
 };
 
