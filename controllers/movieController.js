@@ -44,16 +44,31 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
 
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
   if (!jsonString) return defaultValue;
+  
+  const trimmed = jsonString.trim();
+  
   try {
-    // Try parsing as-is first
-    return JSON.parse(jsonString);
+    return JSON.parse(trimmed);
   } catch (e) {
-    // If it fails, try converting single quotes to double quotes (common issue)
     try {
-      const fixedString = jsonString.replace(/'/g, '"');
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        const content = trimmed.slice(1, -1).trim();
+        
+        if (!content) return []; 
+        
+        const values = content.split(',').map(item => {
+          const cleaned = item.trim();
+          return cleaned.replace(/^['"]|['"]$/g, '');
+        }).filter(item => item.length > 0);
+        
+        return values;
+      }
+      
+      const fixedString = trimmed.replace(/'/g, '"');
       return JSON.parse(fixedString);
+      
     } catch (e2) {
-      console.warn(`Invalid JSON in ${fieldName}:`, jsonString);
+      console.warn(`Invalid JSON in ${fieldName}:`, trimmed);
       return defaultValue;
     }
   }
