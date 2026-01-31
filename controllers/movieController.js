@@ -202,7 +202,7 @@ const getComingSoonMovies = async (req, res) => {
 
     const totalMovies = countResult?.total || 0;
     const totalPages = Math.ceil(totalMovies / limit);
-     console.log('DEBUG:', { page, limit, offset, pageType: typeof page, limitType: typeof limit, offsetType: typeof offset });
+    console.log('DEBUG:', { page, limit, offset, pageType: typeof page, limitType: typeof limit, offsetType: typeof offset });
 
     // Get approved movies with release date > today (with pagination)
     const movies = await db.query(
