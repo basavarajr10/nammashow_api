@@ -559,7 +559,7 @@ const getTheatersSchedules = async (req, res) => {
         let filteredSchedules = schedules;
         if (movie_lang) {
           filteredSchedules = schedules.filter(schedule => {
-            const movieLanguages = schedule.movie_languages ? JSON.parse(schedule.movie_languages) : [];
+            const movieLanguages = safeJSONParse(schedule.movie_languages, 'movie_languages', []);
             return movieLanguages.includes(movie_lang);
           });
         }
@@ -569,23 +569,20 @@ const getTheatersSchedules = async (req, res) => {
           theater_name: theaterTranslation?.theater_name || theater.theater_name,
           city: theaterTranslation?.city || cityName,
           address: theaterTranslation?.address || theater.full_address,
-          // Distance will be calculated later when user location is available
           distance: null,
           schedules: filteredSchedules.map(schedule => {
-            const movieLanguages = schedule.movie_languages ? JSON.parse(schedule.movie_languages) : [];
-            const pricingData = schedule.pricing_data ? JSON.parse(schedule.pricing_data) : null;
+            const movieLanguages = safeJSONParse(schedule.movie_languages, 'movie_languages', []);
+            const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', null);
 
             // Determine price type based on date
             const scheduleDate = new Date(schedule.show_date);
-            const dayOfWeek = scheduleDate.getDay(); // 0=Sunday, 6=Saturday
+            const dayOfWeek = scheduleDate.getDay();
             const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
-
-            // TODO: Check for holidays from holiday_managements table
             const isHoliday = false;
 
             // Get current prices for each category
             let priceRange = null;
-            if (pricingData) {
+            if (pricingData && typeof pricingData === 'object') {
               const currentPrices = [];
               Object.keys(pricingData).forEach(category => {
                 const categoryPricing = pricingData[category];
@@ -613,7 +610,7 @@ const getTheatersSchedules = async (req, res) => {
               show_end_time: schedule.show_end_time,
               format: schedule.experience_format,
               languages: movieLanguages,
-              price_range: priceRange // "₹1000-₹1500"
+              price_range: priceRange
             };
           })
         };
