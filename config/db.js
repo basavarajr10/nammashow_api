@@ -19,7 +19,7 @@ const testConnection = async () => {
 
 const query = async (sql, params = []) => {
   try {
-    const [rows] = await promisePool.execute(sql, params);
+    const [rows] = await promisePool.query(sql, params);
     return rows;
   } catch (error) {
     console.error('Query Error:', error.message);
@@ -29,7 +29,7 @@ const query = async (sql, params = []) => {
 
 const queryOne = async (sql, params = []) => {
   try {
-    const [rows] = await promisePool.execute(sql, params);
+    const [rows] = await promisePool.query(sql, params);
     return rows[0] || null;
   } catch (error) {
     console.error('Query Error:', error.message);
