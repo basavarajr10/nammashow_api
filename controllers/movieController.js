@@ -43,9 +43,17 @@ const getMovieTranslation = async (movieId, languageCode = 'kn') => {
 };
 
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
+  // If it's already an array or object, return it as-is
+  if (Array.isArray(jsonString)) {
+    return jsonString;
+  }
+  
+  if (typeof jsonString === 'object' && jsonString !== null) {
+    return jsonString;
+  }
+  
   // Handle null, undefined, or non-string values
   if (!jsonString || typeof jsonString !== 'string') {
-    console.log(`${fieldName} is null/undefined or not a string:`, typeof jsonString, jsonString);
     return defaultValue;
   }
   
@@ -53,20 +61,13 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
   
   // Return default if empty
   if (!trimmed) {
-    console.log(`${fieldName} is empty string`);
     return defaultValue;
   }
   
-  // Log what we're trying to parse
-  console.log(`Parsing ${fieldName}:`, trimmed);
-  
   try {
     // Try parsing as valid JSON first
-    const result = JSON.parse(trimmed);
-    console.log(`${fieldName} parsed successfully:`, result);
-    return result;
+    return JSON.parse(trimmed);
   } catch (e) {
-    console.log(`${fieldName} failed standard JSON parse, trying alternative...`);
     // Handle [ 'value1', 'value2' ] format
     try {
       if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
@@ -79,14 +80,11 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
           return item.trim().replace(/^['"]|['"]$/g, '');
         }).filter(item => item);
         
-        console.log(`${fieldName} parsed as array:`, values);
         return values;
       }
       
       // Try replacing single quotes with double quotes
-      const result = JSON.parse(trimmed.replace(/'/g, '"'));
-      console.log(`${fieldName} parsed after quote replacement:`, result);
-      return result;
+      return JSON.parse(trimmed.replace(/'/g, '"'));
       
     } catch (e2) {
       console.warn(`Could not parse ${fieldName}:`, trimmed);
