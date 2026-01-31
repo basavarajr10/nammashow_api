@@ -752,7 +752,7 @@ const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation'
 
         const bookedSeats = [];
         bookings.forEach(booking => {
-            const seats_data = safejsonparse(booking.seats_booked, 'seats_booked', []);
+            const seats_data = safeJSONParse(booking.seats_booked, 'seats_booked', []);
             seats_data.forEach(seat => {
                 if (seat.id || seat.seat_number) {
                     bookedSeats.push(seat.id || seat.seat_number);
