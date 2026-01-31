@@ -96,12 +96,24 @@ const saveQRCodeToFile = async (data, bookingNumber) => {
         const config = require('../config/config');
 
         // Get Laravel public path from config
-        const laravelPublicPath = config.laravel.publicPath || 'D:/webmoon/nammashow_admin_livewire/public';
+        const laravelPublicPath = config.laravel.publicPath;
+
+        if (!fs.existsSync(laravelPublicPath)) {
+            console.error(`❌ CRITICAL ERROR: Laravel public path not found: ${laravelPublicPath}`);
+            console.error(`Please update LARAVEL_PUBLIC_PATH in your .env file.`);
+            throw new Error('Laravel public path not configured or does not exist.');
+        }
 
         // Create storage/qrcodes directory if it doesn't exist
         const qrCodesDir = path.join(laravelPublicPath, 'storage', 'qrcodes');
         if (!fs.existsSync(qrCodesDir)) {
-            fs.mkdirSync(qrCodesDir, { recursive: true });
+            try {
+                fs.mkdirSync(qrCodesDir, { recursive: true });
+                console.log(`✅ Created directory: ${qrCodesDir}`);
+            } catch (err) {
+                console.error(`❌ Failed to create directory ${qrCodesDir}:`, err.message);
+                throw new Error('QR Code directory not writable');
+            }
         }
 
         // Generate filename: booking_number.png
