@@ -120,7 +120,7 @@ const getLanguages = async (req, res) => {
     console.log('Fetching active languages');
 
     const languages = await db.query(
-      'SELECT id, name, code, native_name FROM languages WHERE is_active = 1 AND deleted_at IS NULL ORDER BY sort_order'
+      'SELECT id, name, code,display_code, native_name FROM languages WHERE is_active = 1 AND deleted_at IS NULL ORDER BY sort_order'
     );
 
     return successResponse(res, 'Languages fetched successfully', languages);

@@ -48,6 +48,10 @@ const bannerRoutes = require('./routes/banner');
 app.use(`${config.apiPrefix}/banner`, bannerRoutes);
 const onboardingRoutes = require('./routes/onboarding');
 app.use(`${config.apiPrefix}`, onboardingRoutes);
+const movieRoutes = require('./routes/movie');
+app.use(`${config.apiPrefix}`, movieRoutes);
+const bookingRoutes = require('./routes/booking');
+app.use(`${config.apiPrefix}`, bookingRoutes);
 
 // 404 Handler
 app.use((req, res) => {
@@ -72,11 +76,20 @@ const startServer = async () => {
   try {
     // Test database connection
     await db.testConnection();
-    
+
     // Start listening
     app.listen(config.port, () => {
       console.log('🎬 NammaShow API Server Started');
       console.log(`Port: ${config.port}`);
+
+      // START BACKGROUND TASKS
+
+      // 1. Cleanup pending bookings every 5 minutes
+      const { cleanupPendingBookings } = require('./controllers/bookingController');
+      setInterval(async () => {
+        console.log('--- Running Background Task: Stale Bookings Cleanup ---');
+        await cleanupPendingBookings();
+      }, 5 * 60 * 1000); // 5 minutes in milliseconds
     });
   } catch (error) {
     console.error('Failed to start server:', error.message);

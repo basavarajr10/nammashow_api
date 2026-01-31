@@ -39,7 +39,8 @@ module.exports = {
 
   laravel: {
     apiUrl: process.env.LARAVEL_API_URL || 'https://nsadmin.webmoon.co.in/api',
-    baseUrl: process.env.LARAVEL_BASE_URL || 'https://nsadmin.webmoon.co.in'
+    baseUrl: process.env.LARAVEL_BASE_URL || 'https://nsadmin.webmoon.co.in',
+    publicPath: process.env.LARAVEL_PUBLIC_PATH || 'D:/webmoon/nammashow_admin_livewire/public'
   }
 
 };
