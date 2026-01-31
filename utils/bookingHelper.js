@@ -94,6 +94,7 @@ const saveQRCodeToFile = async (data, bookingNumber) => {
         const QRCode = require('qrcode');
         const axios = require('axios');
         const { createCanvas, loadImage } = require('canvas');
+        const path = require('path');
         const config = require('../config/config');
 
         // Generate QR code to canvas
@@ -110,34 +111,47 @@ const saveQRCodeToFile = async (data, bookingNumber) => {
 
         const ctx = canvas.getContext('2d');
 
-        // Draw white circle in center for logo background
+        // Load and draw NammaShow logo in center
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
-        const logoSize = 80;
+        const logoSize = 100;
 
-        ctx.fillStyle = '#FFFFFF';
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, logoSize / 2 + 10, 0, 2 * Math.PI);
-        ctx.fill();
+        try {
+            // Load the logo image
+            const logoPath = path.join(__dirname, '..', 'assets', 'nammashow-logo.png');
+            const logo = await loadImage(logoPath);
 
-        // Draw border around circle
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+            // Draw white background circle for logo
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, logoSize / 2 + 5, 0, 2 * Math.PI);
+            ctx.fill();
 
-        // Draw "NammaShow" text
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 16px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+            // Draw the logo image
+            const logoX = centerX - logoSize / 2;
+            const logoY = centerY - logoSize / 2;
+            ctx.drawImage(logo, logoX, logoY, logoSize, logoSize);
 
-        // Draw text in two lines
-        ctx.fillText('Namma', centerX, centerY - 10);
-        ctx.fillText('Show', centerX, centerY + 10);
+        } catch (logoError) {
+            console.warn('Logo not found, using text fallback:', logoError.message);
 
-        // Add small ticket icon emoji or symbol
-        ctx.font = '20px Arial';
-        ctx.fillText('🎬', centerX, centerY - 30);
+            // Fallback: Draw white circle with text
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 50, 0, 2 * Math.PI);
+            ctx.fill();
+
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Namma', centerX, centerY - 10);
+            ctx.fillText('Show', centerX, centerY + 10);
+        }
 
         // Convert canvas to data URL
         const qrCodeDataURL = canvas.toDataURL('image/png');
