@@ -1,6 +1,57 @@
 const db = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 
+const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
+  // If it's already an array or object, return it as-is
+  if (Array.isArray(jsonString)) {
+    return jsonString;
+  }
+  
+  if (typeof jsonString === 'object' && jsonString !== null) {
+    return jsonString;
+  }
+  
+  // Handle null, undefined, or non-string values
+  if (!jsonString || typeof jsonString !== 'string') {
+    return defaultValue;
+  }
+  
+  const trimmed = jsonString.trim();
+  
+  // Return default if empty
+  if (!trimmed) {
+    return defaultValue;
+  }
+  
+  try {
+    // Try parsing as valid JSON first
+    return JSON.parse(trimmed);
+  } catch (e) {
+    // Handle [ 'value1', 'value2' ] format
+    try {
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        const content = trimmed.slice(1, -1).trim();
+        
+        if (!content) return defaultValue;
+        
+        // Split by comma and clean each value
+        const values = content.split(',').map(item => {
+          return item.trim().replace(/^['"]|['"]$/g, '');
+        }).filter(item => item);
+        
+        return values;
+      }
+      
+      // Try replacing single quotes with double quotes
+      return JSON.parse(trimmed.replace(/'/g, '"'));
+      
+    } catch (e2) {
+      console.warn(`Could not parse ${fieldName}:`, trimmed);
+      return defaultValue;
+    }
+  }
+};
+
 // Helper function to cleanup pending bookings older than 15 minutes
 const cleanupPendingBookings = async () => {
     try {
@@ -107,9 +158,10 @@ const getSeatLayout = async (req, res) => {
         }
 
         // Parse JSON fields
-        const layoutData = schedule.layout_data ? JSON.parse(schedule.layout_data) : [];
-        const seatAllocation = schedule.seat_allocation ? JSON.parse(schedule.seat_allocation) : {};
-        const pricingData = schedule.pricing_data ? JSON.parse(schedule.pricing_data) : {};
+       const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
+const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation', {});
+const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
+
 
         // Get booked seats for this specific schedule
         const bookings = await db.query(
@@ -123,7 +175,7 @@ const getSeatLayout = async (req, res) => {
         // Extract all booked seat IDs
         const bookedSeats = [];
         bookings.forEach(booking => {
-            const seats = booking.seats_booked ? JSON.parse(booking.seats_booked) : [];
+            const seats = safeJSONParse(booking.seats_booked, 'seats_booked', []);
             seats.forEach(seat => {
                 if (seat.id) {
                     bookedSeats.push(seat.id);
@@ -459,8 +511,8 @@ const calculatePrice = async (req, res) => {
         const availableLoyaltyPoints = user?.loyality_points ? parseFloat(user.loyality_points) : 0;
 
         // Parse layout data to get seat categories
-        const layoutData = schedule.layout_data ? JSON.parse(schedule.layout_data) : [];
-        const pricingData = schedule.pricing_data ? JSON.parse(schedule.pricing_data) : {};
+        const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
+const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
 
         // Determine price type (base/weekend/holiday)
         const scheduleDate = new Date(schedule.show_date);
@@ -590,7 +642,7 @@ const calculatePrice = async (req, res) => {
         const totalAmount = amountAfterDiscount + gst;
 
         // Parse movie languages
-        const movieLanguages = schedule.languages ? JSON.parse(schedule.languages) : [];
+        const movieLanguages = safeJSONParse(schedule.languages, 'movie_languages', []);
 
         return successResponse(res, 'Price calculated successfully', {
             movie_info: {
@@ -685,8 +737,8 @@ const createOrder = async (req, res) => {
         }
 
         // Check seat availability
-        const layoutData = schedule.layout_data ? JSON.parse(schedule.layout_data) : [];
-        const seatAllocation = schedule.seat_allocation ? JSON.parse(schedule.seat_allocation) : {};
+        const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
+const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation', {});
         const onlineSeats = seatAllocation.online_seats || [];
 
         // Get already booked seats
@@ -700,7 +752,7 @@ const createOrder = async (req, res) => {
 
         const bookedSeats = [];
         bookings.forEach(booking => {
-            const seats_data = booking.seats_booked ? JSON.parse(booking.seats_booked) : [];
+            const seats_data = safejsonparse(booking.seats_booked, 'seats_booked', []);
             seats_data.forEach(seat => {
                 if (seat.id || seat.seat_number) {
                     bookedSeats.push(seat.id || seat.seat_number);
@@ -723,7 +775,7 @@ const createOrder = async (req, res) => {
         }
 
         // Calculate pricing (reuse existing logic)
-        const pricingData = schedule.pricing_data ? JSON.parse(schedule.pricing_data) : {};
+        const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
         const scheduleDate = new Date(schedule.show_date);
         const dayOfWeek = scheduleDate.getDay();
         const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
@@ -1045,7 +1097,7 @@ const verifyPayment = async (req, res) => {
         }
 
         // Parse booking details from payment_details
-        const bookingData = JSON.parse(payment.payment_details || '{}');
+        const bookingData = safeJSONParse(payment.payment_details, 'payment_details', {});
         const bookingId = payment.booking_id;
 
         // Get the booking
@@ -1242,7 +1294,7 @@ const getMyBookings = async (req, res) => {
             // Parse seats safely
             let seats = [];
             try {
-                const parsedSeats = JSON.parse(booking.seats_booked || '[]');
+                const parsedSeats = safeJSONParse(booking.seats_booked, 'seats_booked', []);
                 seats = Array.isArray(parsedSeats) ? parsedSeats.map(s => s.seat_number || s.id) : [];
             } catch (e) {
                 console.error('Error parsing seats_booked in list:', e);
@@ -1324,7 +1376,7 @@ const getBookingDetails = async (req, res) => {
         // Parse JSON fields safely
         let seatsBooked = [];
         try {
-            const parsedSeats = JSON.parse(booking.seats_booked || '[]');
+            const parsedSeats = safeJSONParse(booking.seats_booked, 'seats_booked', []);
             seatsBooked = Array.isArray(parsedSeats) ? parsedSeats : [];
         } catch (e) {
             console.error('Error parsing seats_booked:', e);
@@ -1333,7 +1385,7 @@ const getBookingDetails = async (req, res) => {
 
         let paymentInfo = {};
         try {
-            const parsedPayment = JSON.parse(booking.payment_information || '{}');
+            const parsedPayment = safeJSONParse(booking.payment_information, 'payment_information', {});
             paymentInfo = (parsedPayment && typeof parsedPayment === 'object') ? parsedPayment : {};
         } catch (e) {
             console.error('Error parsing payment_information:', e);
