@@ -2,61 +2,61 @@ const db = require('../config/db');
 const { successResponse, errorResponse } = require('../utils/responseHelper');
 
 const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
-  // If it's already an array or object, return it as-is
-  if (Array.isArray(jsonString)) {
-    return jsonString;
-  }
-  
-  if (typeof jsonString === 'object' && jsonString !== null) {
-    return jsonString;
-  }
-  
-  // Handle null, undefined, or non-string values
-  if (!jsonString || typeof jsonString !== 'string') {
-    return defaultValue;
-  }
-  
-  const trimmed = jsonString.trim();
-  
-  // Return default if empty
-  if (!trimmed) {
-    return defaultValue;
-  }
-  
-  try {
-    // Try parsing as valid JSON first
-    return JSON.parse(trimmed);
-  } catch (e) {
-    // Handle [ 'value1', 'value2' ] format
-    try {
-      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        const content = trimmed.slice(1, -1).trim();
-        
-        if (!content) return defaultValue;
-        
-        // Split by comma and clean each value
-        const values = content.split(',').map(item => {
-          return item.trim().replace(/^['"]|['"]$/g, '');
-        }).filter(item => item);
-        
-        return values;
-      }
-      
-      // Try replacing single quotes with double quotes
-      return JSON.parse(trimmed.replace(/'/g, '"'));
-      
-    } catch (e2) {
-      console.warn(`Could not parse ${fieldName}:`, trimmed);
-      return defaultValue;
+    // If it's already an array or object, return it as-is
+    if (Array.isArray(jsonString)) {
+        return jsonString;
     }
-  }
+
+    if (typeof jsonString === 'object' && jsonString !== null) {
+        return jsonString;
+    }
+
+    // Handle null, undefined, or non-string values
+    if (!jsonString || typeof jsonString !== 'string') {
+        return defaultValue;
+    }
+
+    const trimmed = jsonString.trim();
+
+    // Return default if empty
+    if (!trimmed) {
+        return defaultValue;
+    }
+
+    try {
+        // Try parsing as valid JSON first
+        return JSON.parse(trimmed);
+    } catch (e) {
+        // Handle [ 'value1', 'value2' ] format
+        try {
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                const content = trimmed.slice(1, -1).trim();
+
+                if (!content) return defaultValue;
+
+                // Split by comma and clean each value
+                const values = content.split(',').map(item => {
+                    return item.trim().replace(/^['"]|['"]$/g, '');
+                }).filter(item => item);
+
+                return values;
+            }
+
+            // Try replacing single quotes with double quotes
+            return JSON.parse(trimmed.replace(/'/g, '"'));
+
+        } catch (e2) {
+            console.warn(`Could not parse ${fieldName}:`, trimmed);
+            return defaultValue;
+        }
+    }
 };
 
 // Helper function to cleanup pending bookings older than 15 minutes
 const cleanupPendingBookings = async () => {
     try {
-        // Find bookings that are pending (status 0) and older than 15 minutes
-        const result = await db.query(
+        // Clean up pending bookings older than 15 minutes
+        const bookingResult = await db.query(
             `UPDATE theater_bookings 
              SET status = 2, updated_at = NOW() 
              WHERE status = 0 
@@ -64,11 +64,20 @@ const cleanupPendingBookings = async () => {
              AND deleted_at IS NULL`
         );
 
-        if (result.affectedRows > 0) {
-            console.log(`✅ Cleaned up ${result.affectedRows} stale pending bookings.`);
+        if (bookingResult.affectedRows > 0) {
+            console.log(`✅ Cleaned up ${bookingResult.affectedRows} stale pending bookings.`);
+        }
+
+        // Clean up expired seat locks
+        const lockResult = await db.query(
+            'DELETE FROM seat_locks WHERE expires_at < NOW()'
+        );
+
+        if (lockResult.affectedRows > 0) {
+            console.log(`✅ Cleaned up ${lockResult.affectedRows} expired seat locks.`);
         }
     } catch (error) {
-        console.error('Error during pending bookings cleanup:', error);
+        console.error('Error during cleanup:', error);
     }
 };
 
@@ -122,7 +131,7 @@ const getTheaterTranslation = async (theaterId, languageCode = 'kn') => {
 // 1. Get Seat Layout for a Schedule
 const getSeatLayout = async (req, res) => {
     try {
-        // Automatically cleanup stale pending bookings first
+        // Automatically cleanup stale pending bookings and locks first
         await cleanupPendingBookings();
 
         console.log('========== GET SEAT LAYOUT ==========');
@@ -158,10 +167,9 @@ const getSeatLayout = async (req, res) => {
         }
 
         // Parse JSON fields
-       const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
-const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation', {});
-const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
-
+        const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
+        const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation', {});
+        const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
 
         // Get booked seats for this specific schedule
         const bookings = await db.query(
@@ -182,6 +190,34 @@ const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
                 }
             });
         });
+
+        // Get locked seats (excluding current user's locks so they can see their own selection)
+        const currentUserId = req.user?.id || null;
+
+        let lockedSeats = [];
+        if (currentUserId) {
+            // If user is logged in, exclude their own locks
+            const lockedSeatsResult = await db.query(
+                `SELECT seat_number FROM seat_locks 
+                 WHERE schedule_id = ? 
+                 AND expires_at > NOW()
+                 AND user_id != ?`,
+                [schedule_id, currentUserId]
+            );
+            lockedSeats = lockedSeatsResult.map(lock => lock.seat_number);
+        } else {
+            // If no user (guest viewing), show all locked seats
+            const lockedSeatsResult = await db.query(
+                `SELECT seat_number FROM seat_locks 
+                 WHERE schedule_id = ? 
+                 AND expires_at > NOW()`,
+                [schedule_id]
+            );
+            lockedSeats = lockedSeatsResult.map(lock => lock.seat_number);
+        }
+
+        console.log('Booked seats:', bookedSeats);
+        console.log('Locked seats:', lockedSeats);
 
         // Determine price type based on date
         const scheduleDate = new Date(schedule.show_date);
@@ -232,13 +268,21 @@ const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
                 const categoryName = categoryMap[seat.category_id] || 'regular';
                 const categoryKey = categoryName.toLowerCase();
 
+                // Determine seat status: booked > locked > available
+                let seatStatus = 'available';
+                if (bookedSeats.includes(seat.seat_number)) {
+                    seatStatus = 'booked';
+                } else if (lockedSeats.includes(seat.seat_number)) {
+                    seatStatus = 'locked';
+                }
+
                 formattedSeats.push({
                     row: seat.row,
                     column: seat.column,
                     seat_number: seat.seat_number,
                     category: categoryName,
                     price: pricing[categoryKey] || 0,
-                    status: bookedSeats.includes(seat.seat_number) ? 'booked' : 'available'
+                    status: seatStatus  // Returns: 'available', 'locked', or 'booked'
                 });
             }
         }
@@ -268,12 +312,157 @@ const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
                 seats: formattedSeats
             },
             total_online_seats: onlineSeats.length,
-            available_seats: onlineSeats.length - bookedSeats.filter(s => onlineSeats.includes(s)).length
+            available_seats: onlineSeats.length - bookedSeats.filter(s => onlineSeats.includes(s)).length,
+            locked_seats_count: lockedSeats.length
         }, 200, true);
 
     } catch (error) {
         console.error('Get Seat Layout Error:', error);
         return errorResponse(res, 'Failed to fetch seat layout', 500);
+    }
+};
+
+// Lock seats temporarily (15 minutes)
+const lockSeats = async (req, res) => {
+    try {
+        console.log('========== LOCK SEATS ==========');
+
+        if (!req.user || !req.user.id) {
+            return errorResponse(res, 'Authentication required', 401);
+        }
+
+        const userId = req.user.id;
+        const { schedule_id, seats } = req.body;
+
+        if (!schedule_id || !seats || !Array.isArray(seats) || seats.length === 0) {
+            return errorResponse(res, 'Schedule ID and seats are required', 400);
+        }
+
+        // Clean up expired locks first
+        await db.query(
+            'DELETE FROM seat_locks WHERE expires_at < NOW()'
+        );
+
+        // Check if any seats are already locked by other users
+        const lockedSeats = await db.query(
+            `SELECT seat_number, user_id FROM seat_locks 
+             WHERE schedule_id = ? 
+             AND seat_number IN (?)
+             AND expires_at > NOW()`,
+            [schedule_id, seats]
+        );
+
+        // Filter out seats locked by other users
+        const unavailableSeats = lockedSeats
+            .filter(lock => lock.user_id !== userId)
+            .map(lock => lock.seat_number);
+
+        if (unavailableSeats.length > 0) {
+            return errorResponse(
+                res,
+                `Seats already selected by another user: ${unavailableSeats.join(', ')}`,
+                409
+            );
+        }
+
+        // Check if seats are already booked
+        const bookings = await db.query(
+            `SELECT seats_booked FROM theater_bookings 
+             WHERE schedule_id = ? 
+             AND status IN (1, 3)
+             AND deleted_at IS NULL`,
+            [schedule_id]
+        );
+
+        const bookedSeats = [];
+        bookings.forEach(booking => {
+            const seats_data = safeJSONParse(booking.seats_booked, 'seats_booked', []);
+            seats_data.forEach(seat => {
+                if (seat.id || seat.seat_number) {
+                    bookedSeats.push(seat.id || seat.seat_number);
+                }
+            });
+        });
+
+        const alreadyBooked = seats.filter(seat => bookedSeats.includes(seat));
+        if (alreadyBooked.length > 0) {
+            return errorResponse(
+                res,
+                `Seats already booked: ${alreadyBooked.join(', ')}`,
+                409
+            );
+        }
+
+        // Lock the seats for 15 minutes
+        for (const seat of seats) {
+            await db.query(
+                `INSERT INTO seat_locks (schedule_id, seat_number, user_id, locked_at, expires_at)
+                 VALUES (?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 15 MINUTE))
+                 ON DUPLICATE KEY UPDATE 
+                    user_id = VALUES(user_id),
+                    locked_at = VALUES(locked_at),
+                    expires_at = VALUES(expires_at)`,
+                [schedule_id, seat, userId]
+            );
+        }
+
+        console.log(`✅ Locked ${seats.length} seats for user ${userId}`);
+
+        return successResponse(res, 'Seats locked successfully', {
+            schedule_id: schedule_id,
+            locked_seats: seats,
+            expires_in_minutes: 15,
+            expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+        });
+
+    } catch (error) {
+        console.error('Lock Seats Error:', error);
+        return errorResponse(res, 'Failed to lock seats', 500);
+    }
+};
+
+// Unlock seats (when user deselects or navigates away)
+const unlockSeats = async (req, res) => {
+    try {
+        console.log('========== UNLOCK SEATS ==========');
+
+        if (!req.user || !req.user.id) {
+            return errorResponse(res, 'Authentication required', 401);
+        }
+
+        const userId = req.user.id;
+        const { schedule_id, seats } = req.body;
+
+        if (!schedule_id) {
+            return errorResponse(res, 'Schedule ID is required', 400);
+        }
+
+        // If seats array is provided, unlock only those seats
+        // If not provided, unlock all seats for this user and schedule
+        if (seats && Array.isArray(seats) && seats.length > 0) {
+            await db.query(
+                `DELETE FROM seat_locks 
+                 WHERE schedule_id = ? 
+                 AND user_id = ? 
+                 AND seat_number IN (?)`,
+                [schedule_id, userId, seats]
+            );
+            console.log(`✅ Unlocked ${seats.length} specific seats for user ${userId}`);
+        } else {
+            const result = await db.query(
+                `DELETE FROM seat_locks 
+                 WHERE schedule_id = ? 
+                 AND user_id = ?`,
+                [schedule_id, userId]
+            );
+            console.log(`✅ Unlocked all seats for user ${userId} (${result.affectedRows} seats)`);
+        }
+
+        return successResponse(res, 'Seats unlocked successfully');
+
+    } catch (error) {
+        console.error('Unlock Seats Error:', error);
+        return errorResponse(res, 'Failed to unlock seats', 500);
     }
 };
 
@@ -301,24 +490,15 @@ const getFoodItemImageUrl = async (itemId) => {
     }
 };
 
-// 2. Get Food & Beverages for a Schedule
+// 2. Get Food & Beverages for a Theater
 const getFoodBeverages = async (req, res) => {
     try {
         console.log('========== GET FOOD & BEVERAGES ==========');
-        const { schedule_id } = req.params;
-        const { lang = 'kn' } = req.query;
+        const { theater_id } = req.params;
+        const { lang = 'en' } = req.query;
 
-        // Get schedule to find theater
-        const schedule = await db.queryOne(
-            `SELECT sm.theaters_id 
-       FROM schedule_managements schm
-       JOIN show_managements sm ON schm.movie_id = sm.id
-       WHERE schm.id = ?`,
-            [schedule_id]
-        );
-
-        if (!schedule) {
-            return errorResponse(res, 'Schedule not found', 404);
+        if (!theater_id) {
+            return errorResponse(res, 'Theater ID is required', 400);
         }
 
         // Get food items for this theater
@@ -329,7 +509,7 @@ const getFoodBeverages = async (req, res) => {
        AND status = '1' 
        AND deleted_at IS NULL
        ORDER BY item_name ASC`,
-            [schedule.theaters_id]
+            [theater_id]
         );
 
         if (!foodItems || foodItems.length === 0) {
@@ -379,7 +559,7 @@ const getFoodBeverages = async (req, res) => {
 const getCoupons = async (req, res) => {
     try {
         console.log('========== GET COUPONS ==========');
-        const { lang = 'kn' } = req.query;
+        const { lang = 'en' } = req.query;
 
         // Get active coupons within date range
         const coupons = await db.query(
@@ -512,7 +692,7 @@ const calculatePrice = async (req, res) => {
 
         // Parse layout data to get seat categories
         const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
-const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
+        const pricingData = safeJSONParse(schedule.pricing_data, 'pricing_data', {});
 
         // Determine price type (base/weekend/holiday)
         const scheduleDate = new Date(schedule.show_date);
@@ -704,6 +884,19 @@ const createOrder = async (req, res) => {
             return errorResponse(res, 'Schedule ID and seats are required', 400);
         }
 
+        // Auto-lock seats when creating order (15 minutes)
+        for (const seat of seats) {
+            await db.query(
+                `INSERT INTO seat_locks (schedule_id, seat_number, user_id, locked_at, expires_at)
+                 VALUES (?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL 15 MINUTE))
+                 ON DUPLICATE KEY UPDATE 
+                    user_id = VALUES(user_id),
+                    locked_at = VALUES(locked_at),
+                    expires_at = VALUES(expires_at)`,
+                [schedule_id, seat, userId]
+            );
+        }
+
         // Import utilities
         const razorpayUtil = require('../utils/razorpay');
         const bookingHelper = require('../utils/bookingHelper');
@@ -738,7 +931,7 @@ const createOrder = async (req, res) => {
 
         // Check seat availability
         const layoutData = safeJSONParse(schedule.layout_data, 'layout_data', []);
-const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation', {});
+        const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation', {});
         const onlineSeats = seatAllocation.online_seats || [];
 
         // Get already booked seats
@@ -886,7 +1079,6 @@ const seatAllocation = safeJSONParse(schedule.seat_allocation, 'seat_allocation'
                 loyaltyPointsUsed = Math.min(availablePoints, subtotal - couponDiscount);
             }
         }
-
 
         // Calculate GST and total
         const amountAfterDiscount = subtotal - couponDiscount - loyaltyPointsUsed;
@@ -1159,7 +1351,15 @@ const verifyPayment = async (req, res) => {
         await connection.commit();
         connection.release();
 
-        // Generate QR code and save as file
+        // Release seat locks after successful payment
+        await db.query(
+            'DELETE FROM seat_locks WHERE schedule_id = ? AND user_id = ?',
+            [bookingData.schedule_id, userId]
+        );
+
+        console.log(`✅ Released seat locks for user ${userId} after successful payment`);
+
+        // Generate QR code and save via Laravel API
         const qrData = bookingHelper.createBookingQRData({
             booking_number: booking.booking,
             booking_id: bookingId,
@@ -1217,7 +1417,7 @@ const getMyBookings = async (req, res) => {
         const status = req.query.status ? parseInt(req.query.status) : undefined;
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
-        const language = req.query.language || 'kn';
+        const language = req.query.language || 'en';
 
         const offset = (page - 1) * limit;
         let whereClause = 'WHERE JSON_EXTRACT(user_information, "$.user_id") = ? AND deleted_at IS NULL';
@@ -1314,7 +1514,6 @@ const getMyBookings = async (req, res) => {
             };
         }));
 
-
         return successResponse(res, 'Bookings fetched successfully', {
             bookings: formattedBookings,
             pagination: {
@@ -1333,6 +1532,7 @@ const getMyBookings = async (req, res) => {
     }
 };
 
+// 8. Get Booking Details
 const getBookingDetails = async (req, res) => {
     try {
         console.log('========== GET BOOKING DETAILS ==========');
@@ -1343,7 +1543,7 @@ const getBookingDetails = async (req, res) => {
 
         const userId = req.user.id;
         const { booking_id } = req.params;
-        const { language = 'kn' } = req.query; // Get language from query params
+        const { language = 'kn' } = req.query;
 
         const booking = await db.queryOne(
             `SELECT 
@@ -1392,7 +1592,7 @@ const getBookingDetails = async (req, res) => {
             paymentInfo = {};
         }
 
-        // Generate QR code and save as file
+        // Generate QR code and save via Laravel API
         const qrData = bookingHelper.createBookingQRData({
             booking_number: booking.booking,
             booking_id: booking.id,
@@ -1470,7 +1670,7 @@ const getBookingDetails = async (req, res) => {
     }
 };
 
-
+// 9. Test Verify Success (Generate test credentials)
 const testVerifySuccess = async (req, res) => {
     try {
         console.log('========== TEST VERIFY SUCCESS - GENERATE CREDENTIALS ==========');
@@ -1551,8 +1751,11 @@ const testVerifyFailure = async (req, res) => {
         return errorResponse(res, 'Test failed: ' + error.message, 500);
     }
 };
+
 module.exports = {
     getSeatLayout,
+    lockSeats,
+    unlockSeats,
     getFoodBeverages,
     getCoupons,
     calculatePrice,

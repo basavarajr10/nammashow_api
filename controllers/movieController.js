@@ -96,7 +96,7 @@ const safeJSONParse = (jsonString, fieldName = 'field', defaultValue = []) => {
 const getNowShowingMovies = async (req, res) => {
   try {
     console.log('========== GET NOW SHOWING MOVIES ==========');
-    const language = req.query.language || 'kn';
+    const language = req.query.language || 'en';
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
@@ -235,7 +235,7 @@ const getNowShowingMovies = async (req, res) => {
 const getComingSoonMovies = async (req, res) => {
   try {
     console.log('========== GET COMING SOON MOVIES ==========');
-    const language = req.query.language || 'kn';
+    const language = req.query.language || 'en';
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
@@ -342,7 +342,7 @@ const getMovieDetails = async (req, res) => {
   try {
     console.log('========== GET MOVIE DETAILS ==========');
     const { id } = req.params;
-    const { language = 'kn' } = req.query;
+    const { language = 'en' } = req.query;
 
     // Get movie
     const movie = await db.queryOne(
@@ -401,7 +401,7 @@ const getRelatedMovies = async (req, res) => {
   try {
     console.log('========== GET RELATED MOVIES ==========');
     const { id } = req.params;
-    const { language = 'kn', limit = 5 } = req.query;
+    const { language = 'en', limit = 10 } = req.query;
 
     // Get current movie's languages
     const currentMovie = await db.queryOne(

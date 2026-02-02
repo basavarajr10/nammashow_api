@@ -52,6 +52,10 @@ const movieRoutes = require('./routes/movie');
 app.use(`${config.apiPrefix}`, movieRoutes);
 const bookingRoutes = require('./routes/booking');
 app.use(`${config.apiPrefix}`, bookingRoutes);
+const eventRoutes = require('./routes/event');
+app.use(`${config.apiPrefix}`, eventRoutes);
+const eventBookingRoutes = require('./routes/eventBooking');
+app.use(`${config.apiPrefix}`, eventBookingRoutes);
 
 // 404 Handler
 app.use((req, res) => {
