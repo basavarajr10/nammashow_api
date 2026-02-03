@@ -476,12 +476,12 @@ const getTheatersSchedules = async (req, res) => {
   try {
     console.log('========== GET THEATERS & SCHEDULES ==========');
     const { id } = req.params;
-    const { date, movie_lang, format, lang = 'kn' } = req.query;
+    const { date, movie_lang, format, lang = 'kn', show_time, show_end_time } = req.query;
 
     // Use today if no date provided
     const showDate = date || new Date().toISOString().split('T')[0];
 
-    console.log('Filters:', { movieId: id, date: showDate, movie_lang, format, display_lang: lang });
+    console.log('Filters:', { movieId: id, date: showDate, movie_lang, format, display_lang: lang, show_time, show_end_time });
 
     // Build WHERE conditions
     const conditions = ['schm.movie_id = ?', 'schm.show_date = ?', 'schm.status = "1"', 'schm.deleted_at IS NULL'];
@@ -490,6 +490,18 @@ const getTheatersSchedules = async (req, res) => {
     if (format) {
       conditions.push('schm.experience_format = ?');
       params.push(format);
+    }
+
+    // Add show_time filter if provided
+    if (show_time) {
+      conditions.push('TIME(schm.show_time) >= ?');
+      params.push(show_time);
+    }
+
+    // Add show_end_time filter if provided
+    if (show_end_time) {
+      conditions.push('TIME(schm.show_time) <= ?');
+      params.push(show_end_time);
     }
 
     // Get theaters with schedules
@@ -513,6 +525,24 @@ const getTheatersSchedules = async (req, res) => {
       return successResponse(res, 'No theaters available for this movie', []);
     }
 
+    // Helper function to format time from database
+    const formatTime = (timeString) => {
+      if (!timeString) return null;
+      
+      // If it's already in HH:MM:SS format
+      if (typeof timeString === 'string' && timeString.includes(':')) {
+        const [hours, minutes] = timeString.split(':');
+        return `${hours}:${minutes}`;
+      }
+      
+      // If it's a Date object
+      if (timeString instanceof Date) {
+        return timeString.toTimeString().slice(0, 5);
+      }
+      
+      return timeString;
+    };
+
     // Get schedules for each theater
     const result = await Promise.all(
       theaters.map(async (theater) => {
@@ -533,6 +563,33 @@ const getTheatersSchedules = async (req, res) => {
 
         const cityName = theater.city ? (cityMapping[theater.city] || theater.city) : null;
 
+        // Build schedule query conditions
+        const scheduleConditions = [
+          'schm.movie_id = ?',
+          'sm.theaters_id = ?',
+          'schm.show_date = ?',
+          'schm.status = "1"',
+          'schm.deleted_at IS NULL'
+        ];
+        const scheduleParams = [id, theater.theater_id, showDate];
+
+        if (format) {
+          scheduleConditions.push('schm.experience_format = ?');
+          scheduleParams.push(format);
+        }
+
+        // Add show_time filter if provided
+        if (show_time) {
+          scheduleConditions.push('TIME(schm.show_time) >= ?');
+          scheduleParams.push(show_time);
+        }
+
+        // Add show_end_time filter if provided
+        if (show_end_time) {
+          scheduleConditions.push('TIME(schm.show_time) <= ?');
+          scheduleParams.push(show_end_time);
+        }
+
         // Get schedules for this theater
         const schedules = await db.query(
           `SELECT 
@@ -545,14 +602,9 @@ const getTheatersSchedules = async (req, res) => {
             sm.pricing_data
           FROM schedule_managements schm
           JOIN show_managements sm ON schm.movie_id = sm.id
-          WHERE schm.movie_id = ?
-          AND sm.theaters_id = ?
-          AND schm.show_date = ?
-          AND schm.status = '1'
-          AND schm.deleted_at IS NULL
-          ${format ? 'AND schm.experience_format = ?' : ''}
+          WHERE ${scheduleConditions.join(' AND ')}
           ORDER BY schm.show_time ASC`,
-          format ? [id, theater.theater_id, showDate, format] : [id, theater.theater_id, showDate]
+          scheduleParams
         );
 
         // Filter by movie language if provided
@@ -606,8 +658,8 @@ const getTheatersSchedules = async (req, res) => {
 
             return {
               schedule_id: schedule.id,
-              show_time: schedule.show_time,
-              show_end_time: schedule.show_end_time,
+              show_time: formatTime(schedule.show_time),
+              show_end_time: formatTime(schedule.show_end_time),
               format: schedule.experience_format,
               languages: movieLanguages,
               price_range: priceRange
@@ -620,8 +672,16 @@ const getTheatersSchedules = async (req, res) => {
     // Filter out theaters with no schedules
     const theatersWithSchedules = result.filter(theater => theater.schedules.length > 0);
 
+    // Build response filters object
+    const appliedFilters = {};
+    if (format) appliedFilters.format = format;
+    if (movie_lang) appliedFilters.language = movie_lang;
+    if (show_time) appliedFilters.show_time = show_time;
+    if (show_end_time) appliedFilters.show_end_time = show_end_time;
+
     return successResponse(res, 'Theaters and schedules fetched successfully', {
       date: showDate,
+      filters: Object.keys(appliedFilters).length > 0 ? appliedFilters : null,
       theaters: theatersWithSchedules
     });
 
