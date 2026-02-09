@@ -842,11 +842,510 @@ const getTheatersSchedules = async (req, res) => {
     return errorResponse(res, 'Failed to fetch theaters and schedules', 500);
   }
 };
+// Single Comprehensive Search API - Movies and Theaters
+const searchMovies = async (req, res) => {
+  try {
+    console.log('========== SEARCH MOVIES & THEATERS ==========');
+    const { 
+      query,           
+      language = 'en',
+      status,          
+      genre,        
+      movie_lang,      
+      format,         
+      rating,          
+      price_range,    
+      show_time,      
+      show_end_time,  
+      city,           
+      date,            
+      limit = 20
+    } = req.query;
+
+    console.log('Search Params:', { 
+      query, language, status, genre, movie_lang, format, rating, 
+      price_range, show_time, show_end_time, city, date, limit 
+    });
+
+    // Validate required query parameter
+    if (!query || query.trim().length < 2) {
+      return errorResponse(res, 'Search query must be at least 2 characters', 400);
+    }
+
+    const searchTerm = `%${query.trim()}%`;
+    const showDate = date || new Date().toISOString().split('T')[0];
+
+    // Parse price range filter if provided
+    let minPriceFilter = null;
+    let maxPriceFilter = null;
+    
+    if (price_range) {
+      const priceRanges = {
+        '0-200': { min: 0, max: 200 },
+        '200-400': { min: 200, max: 400 },
+        '400-600': { min: 400, max: 600 },
+        '600-800': { min: 600, max: 800 },
+        '800+': { min: 800, max: Infinity }
+      };
+      
+      if (priceRanges[price_range]) {
+        minPriceFilter = priceRanges[price_range].min;
+        maxPriceFilter = priceRanges[price_range].max;
+      }
+    }
+
+    // ========== SEARCH MOVIES ==========
+    const movieConditions = [
+      'sm.deleted_at IS NULL',
+      'sm.movie_title LIKE ?'
+    ];
+    const movieParams = [searchTerm];
+
+    // Apply movie filters if provided
+    if (status === 'now_showing') {
+      movieConditions.push('sm.status = "1"');
+      movieConditions.push('sm.release_date <= CURDATE()');
+    } else if (status === 'coming_soon') {
+      movieConditions.push('sm.status = "1"');
+      movieConditions.push('sm.release_date > CURDATE()');
+    } else {
+      movieConditions.push('sm.status = "1"');
+    }
+
+    if (genre) {
+      movieConditions.push('sm.genres LIKE ?');
+      movieParams.push(`%${genre}%`);
+    }
+
+    if (movie_lang) {
+      movieConditions.push('sm.languages LIKE ?');
+      movieParams.push(`%${movie_lang}%`);
+    }
+
+    if (format) {
+      movieConditions.push('sm.experience_formats LIKE ?');
+      movieParams.push(`%${format}%`);
+    }
+
+    if (rating) {
+      const ratingValue = rating.toUpperCase() === 'A' ? '0' : '1';
+      movieConditions.push('sm.cbfc_rating = ?');
+      movieParams.push(ratingValue);
+    }
+
+    const movies = await db.query(
+      `SELECT 
+        sm.id,
+        sm.movie_title,
+        sm.genres,
+        sm.duration,
+        sm.release_date,
+        sm.cbfc_rating,
+        sm.rating_advice,
+        sm.languages,
+        sm.experience_formats,
+        sm.trailer_link,
+        sm.status,
+        sm.pricing_data,
+        sm.theaters_id
+      FROM show_managements sm
+      WHERE ${movieConditions.join(' AND ')}
+      ORDER BY 
+        CASE 
+          WHEN sm.movie_title LIKE ? THEN 1
+          ELSE 2
+        END,
+        sm.movie_title ASC
+      LIMIT ?`,
+      [...movieParams, `${query.trim()}%`, parseInt(limit)]
+    );
+
+    // ========== SEARCH THEATERS ==========
+    const theaterConditions = [
+      't.deleted_at IS NULL',
+      't.status = "1"',
+      't.theater_name LIKE ?'
+    ];
+    const theaterParams = [searchTerm];
+
+    if (city) {
+      const cityMapping = {
+        'Bengaluru': '0',
+        'Mysore': '1'
+      };
+      const cityCode = cityMapping[city] || city;
+      theaterConditions.push('t.city = ?');
+      theaterParams.push(cityCode);
+    }
+
+    const theaters = await db.query(
+      `SELECT 
+        t.id,
+        t.theater_name,
+        t.city,
+        t.full_address
+      FROM theaters t
+      WHERE ${theaterConditions.join(' AND ')}
+      ORDER BY 
+        CASE 
+          WHEN t.theater_name LIKE ? THEN 1
+          ELSE 2
+        END,
+        t.theater_name ASC
+      LIMIT ?`,
+      [...theaterParams, `${query.trim()}%`, parseInt(limit)]
+    );
+
+    // ========== FORMAT MOVIES RESPONSE ==========
+    let formattedMovies = [];
+    if (movies && movies.length > 0) {
+      formattedMovies = await Promise.all(
+        movies.map(async (movie) => {
+          // Get translation
+          const translation = await getMovieTranslation(movie.id, language);
+
+          // Get poster
+          const posterUrl = await getMoviePosterUrl(movie.id);
+
+          // Parse JSON fields safely
+          const languages = safeJSONParse(movie.languages, 'languages', []);
+          const experienceFormats = safeJSONParse(movie.experience_formats, 'experience_formats', []);
+          const pricingData = safeJSONParse(movie.pricing_data, 'pricing_data', null);
+
+          // Determine if movie is now showing or coming soon
+          const releaseDate = new Date(movie.release_date);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const isNowShowing = releaseDate <= today;
+
+          // Calculate price range for the movie
+          let moviePriceRange = null;
+          let movieMinPrice = null;
+          let movieMaxPrice = null;
+
+          if (pricingData && typeof pricingData === 'object') {
+            const scheduleDate = new Date(showDate);
+            const dayOfWeek = scheduleDate.getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            const isHoliday = false;
+
+            const currentPrices = [];
+            Object.keys(pricingData).forEach(category => {
+              const categoryPricing = pricingData[category];
+              let price;
+              if (isHoliday && categoryPricing.holiday_price) {
+                price = parseFloat(categoryPricing.holiday_price);
+              } else if (isWeekend && categoryPricing.weekend_price) {
+                price = parseFloat(categoryPricing.weekend_price);
+              } else {
+                price = parseFloat(categoryPricing.base_price);
+              }
+              currentPrices.push(price);
+            });
+
+            if (currentPrices.length > 0) {
+              movieMinPrice = Math.min(...currentPrices);
+              movieMaxPrice = Math.max(...currentPrices);
+              moviePriceRange = `₹${movieMinPrice}-₹${movieMaxPrice}`;
+            }
+          }
+
+          // Filter by price if price_range filter is applied
+          if (price_range && minPriceFilter !== null && maxPriceFilter !== null) {
+            if (!movieMinPrice) return null; // Skip if no price data
+            
+            // Check if movie's price range overlaps with selected range
+            const priceMatches = (
+              (movieMinPrice >= minPriceFilter && movieMinPrice <= maxPriceFilter) ||
+              (movieMaxPrice >= minPriceFilter && movieMaxPrice <= maxPriceFilter) ||
+              (movieMinPrice <= minPriceFilter && movieMaxPrice >= maxPriceFilter)
+            );
+            
+            if (!priceMatches) return null; // Skip this movie
+          }
+
+          // Get available schedules if filters are applied
+          let availableSchedules = [];
+          if (isNowShowing && (show_time || show_end_time || date)) {
+            const scheduleConditions = [
+              'schm.movie_id = ?',
+              'schm.show_date = ?',
+              'schm.status = "1"',
+              'schm.deleted_at IS NULL'
+            ];
+            const scheduleParams = [movie.id, showDate];
+
+            if (show_time) {
+              scheduleConditions.push('TIME(schm.show_time) >= ?');
+              scheduleParams.push(show_time);
+            }
+
+            if (show_end_time) {
+              scheduleConditions.push('TIME(schm.show_time) <= ?');
+              scheduleParams.push(show_end_time);
+            }
+
+            const schedules = await db.query(
+              `SELECT COUNT(*) as count
+               FROM schedule_managements schm
+               WHERE ${scheduleConditions.join(' AND ')}`,
+              scheduleParams
+            );
+
+            availableSchedules = schedules[0]?.count || 0;
+            
+            // If time filters are applied and no schedules match, skip this movie
+            if ((show_time || show_end_time) && availableSchedules === 0) {
+              return null;
+            }
+          }
+
+          // Get theater info
+          let theaterInfo = null;
+          if (movie.theaters_id) {
+            const theater = await db.queryOne(
+              `SELECT id, theater_name, city FROM theaters WHERE id = ? AND deleted_at IS NULL`,
+              [movie.theaters_id]
+            );
+
+            if (theater) {
+              const theaterTranslation = await db.queryOne(
+                `SELECT tt.theater_name, tt.city
+                 FROM theater_translations tt
+                 JOIN languages l ON tt.language_id = l.id
+                 WHERE tt.theater_id = ? AND l.code = ? AND l.is_active = 1`,
+                [theater.id, language]
+              );
+
+              const cityMapping = {
+                '0': 'Bengaluru',
+                '1': 'Mysore'
+              };
+
+              theaterInfo = {
+                id: theater.id,
+                name: theaterTranslation?.theater_name || theater.theater_name,
+                city: theaterTranslation?.city || cityMapping[theater.city] || theater.city
+              };
+            }
+          }
+
+          return {
+            id: movie.id,
+            title: translation?.movie_title || movie.movie_title,
+            genres: translation?.genres || movie.genres,
+            duration: movie.duration,
+            release_date: movie.release_date ? new Date(movie.release_date).toISOString().split('T')[0] : null,
+            cbfc_rating: movie.cbfc_rating === '0' ? 'A' : 'U',
+            rating_advice: translation?.rating_advice || movie.rating_advice,
+            languages: languages,
+            experience_formats: experienceFormats,
+            poster_url: posterUrl,
+            trailer_link: movie.trailer_link,
+            status: isNowShowing ? 'now_showing' : 'coming_soon',
+            price_range: moviePriceRange,
+            theater: theaterInfo,
+            available_shows: availableSchedules > 0 ? availableSchedules : null
+          };
+        })
+      );
+
+      // Remove null entries (filtered out movies)
+      formattedMovies = formattedMovies.filter(movie => movie !== null);
+    }
+
+    // ========== FORMAT THEATERS RESPONSE ==========
+    let formattedTheaters = [];
+    if (theaters && theaters.length > 0) {
+      formattedTheaters = await Promise.all(
+        theaters.map(async (theater) => {
+          // Get theater translation
+          const theaterTranslation = await db.queryOne(
+            `SELECT tt.theater_name, tt.address, tt.city
+             FROM theater_translations tt
+             JOIN languages l ON tt.language_id = l.id
+             WHERE tt.theater_id = ? AND l.code = ? AND l.is_active = 1`,
+            [theater.id, language]
+          );
+
+          const cityMapping = {
+            '0': 'Bengaluru',
+            '1': 'Mysore'
+          };
+
+          // Get current movies count at this theater
+          const movieCount = await db.queryOne(
+            `SELECT COUNT(DISTINCT sm.id) as count
+             FROM show_managements sm
+             JOIN schedule_managements schm ON sm.id = schm.movie_id
+             WHERE sm.theaters_id = ?
+             AND sm.status = '1'
+             AND sm.deleted_at IS NULL
+             AND schm.show_date >= CURDATE()
+             AND schm.status = '1'
+             AND schm.deleted_at IS NULL`,
+            [theater.id]
+          );
+
+          return {
+            id: theater.id,
+            name: theaterTranslation?.theater_name || theater.theater_name,
+            city: theaterTranslation?.city || cityMapping[theater.city] || theater.city,
+            address: theaterTranslation?.address || theater.full_address,
+            movies_showing: movieCount?.count || 0
+          };
+        })
+      );
+    }
+
+    // Calculate total results
+    const totalResults = formattedMovies.length + formattedTheaters.length;
+
+    // Build applied filters object
+    const appliedFilters = {};
+    if (status) appliedFilters.status = status;
+    if (genre) appliedFilters.genre = genre;
+    if (movie_lang) appliedFilters.language = movie_lang;
+    if (format) appliedFilters.format = format;
+    if (rating) appliedFilters.rating = rating;
+    if (price_range) appliedFilters.price_range = price_range;
+    if (show_time) appliedFilters.show_time = show_time;
+    if (show_end_time) appliedFilters.show_end_time = show_end_time;
+    if (city) appliedFilters.city = city;
+    if (date) appliedFilters.date = date;
+
+    if (totalResults === 0) {
+      return successResponse(res, 'No results found', {
+        search_query: query,
+        total_results: 0,
+        movies: [],
+        theaters: [],
+        filters: Object.keys(appliedFilters).length > 0 ? appliedFilters : null
+      });
+    }
+
+    return successResponse(res, 'Search results fetched successfully', {
+      search_query: query,
+      total_results: totalResults,
+      movies: formattedMovies,
+      theaters: formattedTheaters,
+      filters: Object.keys(appliedFilters).length > 0 ? appliedFilters : null
+    });
+
+  } catch (error) {
+    console.error('Search Error:', error);
+    return errorResponse(res, 'Failed to search', 500);
+  }
+};
+
+// Autocomplete Suggestions (unchanged)
+const getSearchSuggestions = async (req, res) => {
+  try {
+    console.log('========== GET SEARCH SUGGESTIONS ==========');
+    const { query, language = 'en', limit = 5 } = req.query;
+
+    if (!query || query.trim().length < 2) {
+      return successResponse(res, 'Query too short', { movies: [], theaters: [] });
+    }
+
+    const searchTerm = `%${query.trim()}%`;
+
+    // Get movie suggestions
+    const movieSuggestions = await db.query(
+      `SELECT 
+        sm.id,
+        sm.movie_title
+      FROM show_managements sm
+      WHERE sm.deleted_at IS NULL
+      AND sm.status = '1'
+      AND sm.movie_title LIKE ?
+      ORDER BY 
+        CASE 
+          WHEN sm.movie_title LIKE ? THEN 1
+          ELSE 2
+        END,
+        sm.movie_title ASC
+      LIMIT ?`,
+      [searchTerm, `${query.trim()}%`, parseInt(limit)]
+    );
+
+    // Get theater suggestions
+    const theaterSuggestions = await db.query(
+      `SELECT 
+        t.id,
+        t.theater_name,
+        t.city
+      FROM theaters t
+      WHERE t.deleted_at IS NULL
+      AND t.status = '1'
+      AND t.theater_name LIKE ?
+      ORDER BY 
+        CASE 
+          WHEN t.theater_name LIKE ? THEN 1
+          ELSE 2
+        END,
+        t.theater_name ASC
+      LIMIT ?`,
+      [searchTerm, `${query.trim()}%`, parseInt(limit)]
+    );
+
+    // Format movie suggestions
+    const formattedMovies = await Promise.all(
+      (movieSuggestions || []).map(async (movie) => {
+        const translation = await getMovieTranslation(movie.id, language);
+        const posterUrl = await getMoviePosterUrl(movie.id);
+
+        return {
+          id: movie.id,
+          title: translation?.movie_title || movie.movie_title,
+          poster_url: posterUrl,
+          type: 'movie'
+        };
+      })
+    );
+
+    // Format theater suggestions
+    const formattedTheaters = await Promise.all(
+      (theaterSuggestions || []).map(async (theater) => {
+        const theaterTranslation = await db.queryOne(
+          `SELECT tt.theater_name, tt.city
+           FROM theater_translations tt
+           JOIN languages l ON tt.language_id = l.id
+           WHERE tt.theater_id = ? AND l.code = ? AND l.is_active = 1`,
+          [theater.id, language]
+        );
+
+        const cityMapping = {
+          '0': 'Bengaluru',
+          '1': 'Mysore'
+        };
+
+        return {
+          id: theater.id,
+          name: theaterTranslation?.theater_name || theater.theater_name,
+          city: theaterTranslation?.city || cityMapping[theater.city] || theater.city,
+          type: 'theater'
+        };
+      })
+    );
+
+    return successResponse(res, 'Suggestions fetched successfully', {
+      movies: formattedMovies,
+      theaters: formattedTheaters
+    });
+
+  } catch (error) {
+    console.error('Get Search Suggestions Error:', error);
+    return errorResponse(res, 'Failed to fetch suggestions', 500);
+  }
+};
 
 module.exports = {
   getNowShowingMovies,
   getComingSoonMovies,
   getMovieDetails,
   getRelatedMovies,
-  getTheatersSchedules
+  getTheatersSchedules,
+  searchMovies,
+  getSearchSuggestions
 };
