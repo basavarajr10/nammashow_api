@@ -847,18 +847,18 @@ const searchMovies = async (req, res) => {
   try {
     console.log('========== SEARCH MOVIES & THEATERS ==========');
     const { 
-      query,           
-      language = 'en',
-      status,          
-      genre,        
-      movie_lang,      
-      format,         
-      rating,          
-      price_range,    
-      show_time,      
-      show_end_time,  
-      city,           
-      date,            
+      query,           // Search term (required)
+      language = 'en', // Display language
+      status,          // 'now_showing' or 'coming_soon' (optional filter)
+      genre,           // Genre filter (optional)
+      movie_lang,      // Movie language filter (optional)
+      format,          // Experience format filter (optional)
+      rating,          // CBFC rating filter (optional)
+      price_range,     // Price range filter (optional)
+      show_time,       // Show time start filter (optional)
+      show_end_time,   // Show time end filter (optional)
+      city,            // City filter (optional)
+      date,            // Date filter for schedules (optional)
       limit = 20
     } = req.query;
 
@@ -897,9 +897,9 @@ const searchMovies = async (req, res) => {
     // ========== SEARCH MOVIES ==========
     const movieConditions = [
       'sm.deleted_at IS NULL',
-      'sm.movie_title LIKE ?'
+      '(sm.movie_title LIKE ? OR sm.genres LIKE ?)' // CHANGED: Search in both title AND genres
     ];
-    const movieParams = [searchTerm];
+    const movieParams = [searchTerm, searchTerm]; // CHANGED: Add searchTerm twice
 
     // Apply movie filters if provided
     if (status === 'now_showing') {
@@ -952,12 +952,13 @@ const searchMovies = async (req, res) => {
       WHERE ${movieConditions.join(' AND ')}
       ORDER BY 
         CASE 
-          WHEN sm.movie_title LIKE ? THEN 1
-          ELSE 2
+          WHEN sm.movie_title LIKE ? THEN 1  -- Exact title match first
+          WHEN sm.genres LIKE ? THEN 2        -- Then genre match
+          ELSE 3
         END,
         sm.movie_title ASC
       LIMIT ?`,
-      [...movieParams, `${query.trim()}%`, parseInt(limit)]
+      [...movieParams, `${query.trim()}%`, `${query.trim()}%`, parseInt(limit)]
     );
 
     // ========== SEARCH THEATERS ==========
@@ -1237,6 +1238,7 @@ const searchMovies = async (req, res) => {
     return errorResponse(res, 'Failed to search', 500);
   }
 };
+
 
 // Autocomplete Suggestions (unchanged)
 const getSearchSuggestions = async (req, res) => {
