@@ -484,8 +484,7 @@ const getTheatersSchedules = async (req, res) => {
       lang = 'kn', 
       show_time, 
       show_end_time,
-      min_price,
-      max_price,
+      price_range, // Options: '0-200', '200-400', '400-600', '600-800', '800+'
       sort_by = 'nearest' // Options: 'nearest', 'price_low', 'price_high', 'time_early', 'time_late'
     } = req.query;
 
@@ -500,10 +499,28 @@ const getTheatersSchedules = async (req, res) => {
       display_lang: lang, 
       show_time, 
       show_end_time,
-      min_price,
-      max_price,
+      price_range,
       sort_by
     });
+
+    // Parse price range filter
+    let minPriceFilter = null;
+    let maxPriceFilter = null;
+    
+    if (price_range) {
+      const priceRanges = {
+        '0-200': { min: 0, max: 200 },
+        '200-400': { min: 200, max: 400 },
+        '400-600': { min: 400, max: 600 },
+        '600-800': { min: 600, max: 800 },
+        '800+': { min: 800, max: Infinity }
+      };
+      
+      if (priceRanges[price_range]) {
+        minPriceFilter = priceRanges[price_range].min;
+        maxPriceFilter = priceRanges[price_range].max;
+      }
+    }
 
     // Build WHERE conditions
     const conditions = ['schm.movie_id = ?', 'schm.show_date = ?', 'schm.status = "1"', 'schm.deleted_at IS NULL'];
@@ -719,18 +736,17 @@ const getTheatersSchedules = async (req, res) => {
 
         // Filter by price range if provided
         let finalSchedules = processedSchedules;
-        if (min_price || max_price) {
+        if (minPriceFilter !== null && maxPriceFilter !== null) {
           finalSchedules = processedSchedules.filter(schedule => {
             if (!schedule.min_price) return false;
             
-            const scheduleMinPrice = schedule.min_price;
-            const scheduleMaxPrice = schedule.max_price;
-            
-            // Check if schedule's price range overlaps with requested price range
-            if (min_price && scheduleMaxPrice < parseFloat(min_price)) return false;
-            if (max_price && scheduleMinPrice > parseFloat(max_price)) return false;
-            
-            return true;
+            // Check if schedule's min price falls within the selected range
+            // OR if schedule's price range overlaps with selected range
+            return (
+              (schedule.min_price >= minPriceFilter && schedule.min_price <= maxPriceFilter) ||
+              (schedule.max_price >= minPriceFilter && schedule.max_price <= maxPriceFilter) ||
+              (schedule.min_price <= minPriceFilter && schedule.max_price >= maxPriceFilter)
+            );
           });
         }
 
@@ -853,8 +869,7 @@ const getTheatersSchedules = async (req, res) => {
     if (movie_lang) appliedFilters.language = movie_lang;
     if (show_time) appliedFilters.show_time = show_time;
     if (show_end_time) appliedFilters.show_end_time = show_end_time;
-    if (min_price) appliedFilters.min_price = min_price;
-    if (max_price) appliedFilters.max_price = max_price;
+    if (price_range) appliedFilters.price_range = price_range;
     if (sort_by) appliedFilters.sort_by = sort_by;
 
     return successResponse(res, 'Theaters and schedules fetched successfully', {
