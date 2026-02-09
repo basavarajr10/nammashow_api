@@ -472,7 +472,6 @@ const getRelatedMovies = async (req, res) => {
 };
 
 // 5. Get Theaters and Schedules for a Movie
-// 5. Get Theaters and Schedules for a Movie
 const getTheatersSchedules = async (req, res) => {
   try {
     console.log('========== GET THEATERS & SCHEDULES ==========');
@@ -543,15 +542,13 @@ const getTheatersSchedules = async (req, res) => {
       params.push(show_end_time);
     }
 
-    // Get theaters with schedules
+    // Get theaters with schedules (removed latitude and longitude)
     const theaters = await db.query(
       `SELECT DISTINCT
         t.id as theater_id,
         t.theater_name,
         t.city,
-        t.full_address,
-        t.latitude,
-        t.longitude
+        t.full_address
       FROM schedule_managements schm
       JOIN show_managements sm ON schm.movie_id = sm.id
       JOIN theaters t ON sm.theaters_id = t.id
@@ -584,21 +581,6 @@ const getTheatersSchedules = async (req, res) => {
       return timeString;
     };
 
-    // Helper function to calculate distance (Haversine formula)
-    const calculateDistance = (lat1, lon1, lat2, lon2) => {
-      if (!lat1 || !lon1 || !lat2 || !lon2) return null;
-      
-      const R = 6371; // Earth's radius in km
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c; // Distance in km
-    };
-
     // Get schedules for each theater
     const result = await Promise.all(
       theaters.map(async (theater) => {
@@ -618,17 +600,6 @@ const getTheatersSchedules = async (req, res) => {
         };
 
         const cityName = theater.city ? (cityMapping[theater.city] || theater.city) : null;
-
-        // Calculate distance from user location (if provided in query)
-        let distance = null;
-        if (req.query.user_lat && req.query.user_lng && theater.latitude && theater.longitude) {
-          distance = calculateDistance(
-            parseFloat(req.query.user_lat),
-            parseFloat(req.query.user_lng),
-            parseFloat(theater.latitude),
-            parseFloat(theater.longitude)
-          );
-        }
 
         // Build schedule query conditions
         const scheduleConditions = [
@@ -784,7 +755,6 @@ const getTheatersSchedules = async (req, res) => {
           theater_name: theaterTranslation?.theater_name || theater.theater_name,
           city: theaterTranslation?.city || cityName,
           address: theaterTranslation?.address || theater.full_address,
-          distance: distance ? parseFloat(distance.toFixed(2)) : null,
           schedules: cleanSchedules,
           _theater_min_price: theaterMinPrice,
           _theater_earliest_show: theaterEarliestShow
@@ -797,16 +767,6 @@ const getTheatersSchedules = async (req, res) => {
 
     // Sort theaters based on sort_by parameter
     switch (sort_by) {
-      case 'nearest':
-        // Sort by distance (nearest first), null distances go to end
-        theatersWithSchedules.sort((a, b) => {
-          if (a.distance === null && b.distance === null) return 0;
-          if (a.distance === null) return 1;
-          if (b.distance === null) return -1;
-          return a.distance - b.distance;
-        });
-        break;
-
       case 'price_low':
         // Sort by lowest price first
         theatersWithSchedules.sort((a, b) => {
@@ -847,14 +807,13 @@ const getTheatersSchedules = async (req, res) => {
         });
         break;
 
+      case 'nearest':
       default:
-        // Default to nearest
-        theatersWithSchedules.sort((a, b) => {
-          if (a.distance === null && b.distance === null) return 0;
-          if (a.distance === null) return 1;
-          if (b.distance === null) return -1;
-          return a.distance - b.distance;
-        });
+        // For 'nearest', keep alphabetical order by theater name since we don't have lat/lng
+        // You can change this to any default ordering you prefer
+        theatersWithSchedules.sort((a, b) => 
+          a.theater_name.localeCompare(b.theater_name)
+        );
     }
 
     // Remove sorting helper fields from response
