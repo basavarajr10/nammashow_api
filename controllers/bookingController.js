@@ -151,6 +151,7 @@ const getSeatLayout = async (req, res) => {
         slb.layout_data,
         slb.seat_allocation,
         slb.screen,
+        t.id as theater_id,
         t.theater_name
       FROM schedule_managements schm
       JOIN show_managements sm ON schm.movie_id = sm.id
@@ -304,6 +305,7 @@ const getSeatLayout = async (req, res) => {
             show_time: schedule.show_time,
             show_end_time: schedule.show_end_time,
             screen: schedule.screen,
+            theater_id: schedule.theater_id,
             theater_name: schedule.theater_name,
             pricing: pricing,
             layout: {
