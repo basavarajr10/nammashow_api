@@ -497,22 +497,30 @@ const getFoodBeverages = async (req, res) => {
     try {
         console.log('========== GET FOOD & BEVERAGES ==========');
         const { theater_id } = req.params;
-        const { lang = 'en' } = req.query;
+        const { lang = 'en', category } = req.query;
 
         if (!theater_id) {
             return errorResponse(res, 'Theater ID is required', 400);
         }
 
+        // Build query conditions
+        let queryStr = `SELECT id, item_name, category, price, in_stock 
+                       FROM food_and_beverage_managements 
+                       WHERE theater_id = ? 
+                       AND status = '1' 
+                       AND deleted_at IS NULL`;
+
+        const params = [theater_id];
+
+        if (category) {
+            queryStr += ` AND category = ?`;
+            params.push(category);
+        }
+
+        queryStr += ` ORDER BY item_name ASC`;
+
         // Get food items for this theater
-        const foodItems = await db.query(
-            `SELECT id, item_name, price, in_stock 
-       FROM food_and_beverage_managements 
-       WHERE theater_id = ? 
-       AND status = '1' 
-       AND deleted_at IS NULL
-       ORDER BY item_name ASC`,
-            [theater_id]
-        );
+        const foodItems = await db.query(queryStr, params);
 
         if (!foodItems || foodItems.length === 0) {
             return successResponse(res, 'No food items available', []);
@@ -523,7 +531,7 @@ const getFoodBeverages = async (req, res) => {
             foodItems.map(async (item) => {
                 // Get translation
                 const translation = await db.queryOne(
-                    `SELECT ft.item_name, ft.description
+                    `SELECT ft.item_name, ft.category, ft.description
            FROM food_and_beverage_management_translations ft
            JOIN languages l ON ft.language_id = l.id
            WHERE ft.food_and_beverage_management_id = ? 
@@ -538,6 +546,7 @@ const getFoodBeverages = async (req, res) => {
                 return {
                     id: item.id,
                     name: translation?.item_name || item.item_name,
+                    category: translation?.category || item.category,
                     description: translation?.description || null,
                     price: parseFloat(item.price),
                     in_stock: item.in_stock === 1,
